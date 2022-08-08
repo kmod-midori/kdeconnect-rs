@@ -83,7 +83,7 @@ impl tokio_rustls::rustls::client::ServerCertVerifier for ServerVerifier {
         let scheme = convert_scheme(dss.scheme)?;
         let signature = dss.sig.0.as_ref();
 
-        cert.check_tls12_signature(scheme, message, signature)
+        cert.check_signature(scheme, message, signature)
             .map(|_| tokio_rustls::rustls::client::HandshakeSignatureValid::assertion())
             .map_err(|_| TlsError::InvalidCertificateSignature)
     }
@@ -103,17 +103,13 @@ impl tokio_rustls::rustls::client::ServerCertVerifier for ServerVerifier {
             .map(|_| tokio_rustls::rustls::client::HandshakeSignatureValid::assertion())
             .map_err(|_| TlsError::InvalidCertificateSignature)
     }
-
-    // fn supported_verify_schemes(&self) -> Vec<tokio_rustls::rustls::SignatureScheme> {
-    //     tokio_rustls::rustls::client::WebPkiVerifier::verification_schemes()
-    // }
 }
 
-fn generate_certs() -> Result<(Vec<u8>, Vec<u8>)> {
+pub fn generate_certs(device_id: &str) -> Result<(Vec<u8>, Vec<u8>)> {
     let mut cert_params = CertificateParams::new(vec![]);
 
     let mut dn = DistinguishedName::new();
-    dn.push(rcgen::DnType::CommonName, "LycoReco");
+    dn.push(rcgen::DnType::CommonName, device_id);
     dn.push(rcgen::DnType::OrganizationName, "KDE");
     dn.push(rcgen::DnType::OrganizationalUnitName, "KDE Connect");
     cert_params.distinguished_name = dn;
@@ -128,25 +124,4 @@ fn generate_certs() -> Result<(Vec<u8>, Vec<u8>)> {
     let cert_der = cert.serialize_der()?;
 
     Ok((cert_der, key_der))
-}
-
-fn load_certs() -> Result<(Vec<u8>, Vec<u8>)> {
-    let cert_der = std::fs::read("cert.der")?;
-    let key_der = std::fs::read("key.der")?;
-
-    Ok((cert_der, key_der))
-}
-
-pub fn load_or_generate_certs() -> Result<(Vec<u8>, Vec<u8>)> {
-    match load_certs() {
-        Ok(certs) => Ok(certs),
-        Err(_) => {
-            let (cert_der, key_der) = generate_certs()?;
-
-            std::fs::write("cert.der", &cert_der)?;
-            std::fs::write("key.der", &key_der)?;
-
-            Ok((cert_der, key_der))
-        }
-    }
 }
