@@ -1,0 +1,19 @@
+[package]
+name = "kdeconnect"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = { version = "1.0", features = ["backtrace"] }
+tokio = { version = "1.0", features = ["full"] }
+tokio-rustls = { version = "0.23.4", features = ["dangerous_configuration"] }
+x509-signature = { version = "0.5.0" }
+socket2 = "0.4"
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+rcgen = { version = "0.9.3", features = ["pem", "x509-parser"] }
+time = "0.3"
