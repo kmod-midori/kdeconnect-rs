@@ -9,7 +9,7 @@ use std::{
 
 use tokio::sync::mpsc;
 
-use crate::packet::NetworkPacket;
+use crate::packet::NetworkPacketWithPayload;
 
 static NEXT_CONN_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -28,7 +28,7 @@ impl DeviceManagerHandle {
         id: impl Into<String>,
         name: impl Into<String>,
         addr: SocketAddr,
-    ) -> (ConnectionId, mpsc::Receiver<Vec<u8>>) {
+    ) -> (ConnectionId, mpsc::Receiver<NetworkPacketWithPayload>) {
         let (tx, rx) = mpsc::channel(1);
         let conn_id = ConnectionId(NEXT_CONN_ID.fetch_add(1, Ordering::Relaxed));
 
@@ -61,10 +61,23 @@ impl DeviceManagerHandle {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub async fn broadcast_packet(&self, packet: NetworkPacket) {
-        log::debug!("Broadcasting {:?}", packet);
+    pub async fn broadcast_packet(&self, packet: impl Into<NetworkPacketWithPayload>) {
+        let packet: NetworkPacketWithPayload = packet.into();
 
-        let msg = Message::BroadcastPacket { packet: packet.to_vec() };
+        let msg = Message::SendPacket {
+            device_id: None,
+            packet,
+        };
+        self.send_message(msg).await;
+    }
+
+    pub async fn send_packet(&self, device_id: &str, packet: impl Into<NetworkPacketWithPayload>) {
+        let packet: NetworkPacketWithPayload = packet.into();
+
+        let msg = Message::SendPacket {
+            device_id: Some(device_id.into()),
+            packet,
+        };
         self.send_message(msg).await;
     }
 }
@@ -76,14 +89,15 @@ enum Message {
         name: String,
         addr: SocketAddr,
         conn_id: ConnectionId,
-        tx: mpsc::Sender<Vec<u8>>,
+        tx: mpsc::Sender<NetworkPacketWithPayload>,
     },
     RemoveDevice {
         id: String,
         conn_id: ConnectionId,
     },
-    BroadcastPacket {
-        packet: Vec<u8>,
+    SendPacket {
+        device_id: Option<String>,
+        packet: NetworkPacketWithPayload,
     },
 }
 
@@ -92,7 +106,7 @@ struct Device {
     name: String,
     _remote_addr: SocketAddr,
     conn_id: ConnectionId,
-    tx: mpsc::Sender<Vec<u8>>,
+    tx: mpsc::Sender<NetworkPacketWithPayload>,
 }
 
 pub struct DeviceManagerActor {
@@ -150,11 +164,23 @@ impl DeviceManagerActor {
                     }
                 }
             }
-            Message::BroadcastPacket { packet } => {
-                for device in self.devices.values() {
-                    if let Err(e) = device.tx.send(packet.clone()).await {
-                        log::error!("Failed to send packet to device {}: {}", device.name, e);
-                    };
+            Message::SendPacket { packet, device_id } => {
+                if let Some(device_id) = device_id {
+                    log::debug!("Sending {:?} to {}", packet, device_id);
+                    
+                    if let Some(device) = self.devices.get(&device_id) {
+                        if let Err(e) = device.tx.send(packet).await {
+                            log::error!("Failed to send packet to device {}: {}", device.name, e);
+                        }
+                    }
+                } else {
+                    log::debug!("Broadcasting {:?}", packet);
+
+                    for device in self.devices.values() {
+                        if let Err(e) = device.tx.send(packet.clone()).await {
+                            log::error!("Failed to send packet to device {}: {}", device.name, e);
+                        };
+                    }
                 }
             }
         }

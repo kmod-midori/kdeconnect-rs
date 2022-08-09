@@ -1,9 +1,8 @@
-use crate::packet::NetworkPacket;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
+use super::{KdeConnectPlugin, KdeConnectPluginMetadata, IncomingPacket};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
@@ -39,8 +38,8 @@ impl NotificationPlugin {
 
 #[async_trait::async_trait]
 impl KdeConnectPlugin for NotificationPlugin {
-    async fn handle(&self, packet: NetworkPacket) -> Result<()> {
-        let body: NotificationBody = packet.into_body()?;
+    async fn handle(&self, packet: IncomingPacket) -> Result<()> {
+        let body: NotificationBody = packet.inner.into_body()?;
 
         log::info!("Notification: {:?}", body);
 

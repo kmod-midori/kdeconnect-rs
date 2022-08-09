@@ -1,14 +1,13 @@
-use crate::packet::NetworkPacket;
 use anyhow::Result;
 
-use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
+use super::{KdeConnectPlugin, KdeConnectPluginMetadata, IncomingPacket};
 
 #[derive(Debug)]
 pub struct ClipboardPlugin;
 
 #[async_trait::async_trait]
 impl KdeConnectPlugin for ClipboardPlugin {
-    async fn handle(&self, packet: NetworkPacket) -> Result<()> {
+    async fn handle(&self, packet: IncomingPacket) -> Result<()> {
         dbg!(packet);
         Ok(())
     }

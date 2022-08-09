@@ -47,4 +47,8 @@ impl ApplicationContext {
     pub fn tls_acceptor(&self) -> TlsAcceptor {
         self.tls_acceptor.get().unwrap().clone()
     }
+
+    pub fn tls_connector(&self) -> TlsConnector {
+        self.tls_connector.get().unwrap().clone()
+    }
 }

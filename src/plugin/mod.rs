@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::{collections::HashSet, sync::Arc};
 
-use crate::{packet::NetworkPacket, context::AppContextRef};
+use crate::{context::AppContextRef, packet::NetworkPacket};
 
 mod battery;
 mod clipboard;
@@ -15,12 +15,18 @@ pub trait KdeConnectPlugin: std::fmt::Debug + Send + Sync {
     async fn start(self: Arc<Self>, _ctx: AppContextRef) -> Result<()> {
         Ok(())
     }
-    async fn handle(&self, packet: NetworkPacket) -> Result<()>;
+    async fn handle(&self, packet: IncomingPacket) -> Result<()>;
 }
 
 pub trait KdeConnectPluginMetadata {
     fn incomping_capabilities() -> Vec<String>;
     fn outgoing_capabilities() -> Vec<String>;
+}
+
+#[derive(Debug, Clone)]
+pub struct IncomingPacket {
+    device_id: String,
+    inner: NetworkPacket,
 }
 
 #[derive(Debug, Default)]
@@ -61,7 +67,12 @@ impl PluginRepository {
         let in_caps = P::incomping_capabilities();
         let out_caps = P::outgoing_capabilities();
 
-        log::info!("Registering plugin: {:?} with in={:?}, out={:?}", plugin, in_caps, out_caps);
+        log::info!(
+            "Registering plugin: {:?} with in={:?}, out={:?}",
+            plugin,
+            in_caps,
+            out_caps
+        );
 
         self.incoming_caps.extend(in_caps.iter().cloned());
         self.outgoing_caps.extend(out_caps.into_iter());
@@ -70,10 +81,11 @@ impl PluginRepository {
             .push((in_caps.into_iter().collect(), Arc::new(plugin)));
     }
 
-    pub async fn handle_packet(&self, packet: NetworkPacket) -> Result<()> {
-        let typ = packet.typ.as_str();
+    pub async fn handle_packet(&self, device_id: String, packet: NetworkPacket) -> Result<()> {
+        let packet = IncomingPacket { device_id, inner: packet };
+        let typ = packet.inner.typ.as_str();
 
-        log::debug!("Inbound packet: {:?}", packet);
+        log::debug!("Incoming packet: {:?}", packet);
 
         for (in_caps, plguin) in &self.plugins {
             if in_caps.contains(typ) {

@@ -1,6 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{context::AppContextRef, packet::NetworkPacket};
+use crate::{
+    context::AppContextRef,
+    packet::{NetworkPacket, NetworkPacketWithPayload},
+};
 use anyhow::{Context, Result};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
@@ -13,15 +16,16 @@ use windows::{
         GlobalSystemMediaTransportControlsSessionManager,
         GlobalSystemMediaTransportControlsSessionPlaybackStatus,
     },
-    Storage::Streams::{Buffer, DataReader},
+    Storage::Streams::DataReader,
 };
 
 mod cache;
 
-use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
+use super::{IncomingPacket, KdeConnectPlugin, KdeConnectPluginMetadata};
 
 const PACKET_TYPE_MPRIS: &str = "kdeconnect.mpris";
 const PACKET_TYPE_MPRIS_REQUEST: &str = "kdeconnect.mpris.request";
+const COVER_URL_PREFIX: &str = "file:///";
 
 fn log_if_error<R, E: std::fmt::Debug>(text: &str, res: Result<R, E>) {
     if let Err(e) = res {
@@ -104,6 +108,11 @@ enum MprisPacket {
         player_list: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         support_album_art_payload: Option<bool>,
+    },
+    #[serde(rename_all = "camelCase")]
+    TransferringAlbumArt {
+        transferring_album_art: bool,
+        album_art_url: String,
     },
     #[serde(rename_all = "camelCase")]
     Metadata(MprisMetadata),
@@ -245,7 +254,7 @@ impl MprisPlugin {
                 Ok((filename, buffer)) => {
                     log::info!("Thumbnail loaded for {} ({} bytes)", sid, buffer.len());
                     self.album_art_cache.put(&filename, buffer).await?;
-                    mm.properties.album_art_url = Some(format!("file:///{}", filename));
+                    mm.properties.album_art_url = Some(format!("{}{}", COVER_URL_PREFIX, filename));
                 }
                 Err(e) => {
                     log::warn!("Failed to load thumbnail: {:?}", e);
@@ -385,6 +394,32 @@ impl MprisPlugin {
         }
     }
 
+    async fn send_album_art(&self, device_id: &str, filename: &str) {
+        let data = match self.album_art_cache.get(filename).await {
+            Ok(Some(data)) => data,
+            Ok(None) => {
+                log::warn!("Album art not found: {}", filename);
+                return;
+            }
+            Err(e) => {
+                log::error!("Failed to get album art: {}", e);
+                return;
+            }
+        };
+
+        let packet = NetworkPacket::new(
+            PACKET_TYPE_MPRIS,
+            MprisPacket::TransferringAlbumArt {
+                transferring_album_art: true,
+                album_art_url: format!("{}{}", COVER_URL_PREFIX, filename),
+            },
+        );
+        self.ctx()
+            .device_manager
+            .send_packet(device_id, NetworkPacketWithPayload::new(packet, data))
+            .await;
+    }
+
     async fn execute_commands(&self, sid: &str, commands: HashMap<String, Value>) -> Result<()> {
         let sessions = self.sessions.lock().await;
         let session = if let Some(session) = sessions.get(sid) {
@@ -467,31 +502,41 @@ impl KdeConnectPlugin for MprisPlugin {
         Ok(())
     }
 
-    async fn handle(&self, packet: NetworkPacket) -> Result<()> {
-        match packet.typ.as_str() {
+    async fn handle(&self, packet: IncomingPacket) -> Result<()> {
+        match packet.inner.typ.as_str() {
             PACKET_TYPE_MPRIS => {
                 // let body: MprisPacket = packet.into_body()?;
                 // dbg!(body);
             }
             PACKET_TYPE_MPRIS_REQUEST => {
-                let body: MprisRequest = packet.into_body()?;
+                let body: MprisRequest = packet.inner.into_body()?;
 
                 if body.request_player_list == Some(true) {
                     log::debug!("Request player list");
+
                     self.send_player_list().await;
                 }
 
                 if let (Some(id), Some(true)) = (&body.player, body.request_now_playing) {
                     log::debug!("Request now playing for {}", id);
+
                     self.send_now_playing(id).await;
                 }
 
                 if let Some(url) = &body.album_art_url {
-                    log::info!("Requested album art: {}", url);
+                    log::debug!("Request album art: {}", url);
+
+                    if url.len() > COVER_URL_PREFIX.len() {
+                        let filename = &url[COVER_URL_PREFIX.len()..];
+                        self.send_album_art(&packet.device_id, filename).await;
+                    } else {
+                        log::warn!("Invalid album art url (too short): {}", url);
+                    }
                 }
 
                 if let (Some(id), true) = (&body.player, !body.commands.is_empty()) {
-                    log::debug!("Commands: {:?}", body.commands);
+                    log::debug!("Request commands: {:?}", body.commands);
+
                     if let Err(e) = self.execute_commands(id, body.commands).await {
                         log::warn!("Failed to execute commands: {:?}", e);
                     }

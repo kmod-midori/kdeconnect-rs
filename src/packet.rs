@@ -1,3 +1,5 @@
+use std::{fmt::Debug, sync::Arc};
+
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
@@ -46,7 +48,7 @@ pub struct IdentityPacket {
     pub tcp_port: Option<u16>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkPacket {
     // #[serde(flatten)]
@@ -124,9 +126,52 @@ impl NetworkPacket {
     {
         Ok(serde_json::from_value(self.body)?)
     }
+
+    pub fn set_payload(&mut self, size: u64, port: u16) {
+        self.payload_size = Some(size);
+        self.payload_transfer_info = Some(PayloadTransferInfo { port });
+    }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PayloadTransferInfo {
     pub port: u16,
+}
+
+#[derive(Clone)]
+pub struct NetworkPacketWithPayload {
+    pub packet: NetworkPacket,
+    pub payload: Option<Arc<Vec<u8>>>,
+}
+
+impl Debug for NetworkPacketWithPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let payload_desc = match &self.payload {
+            Some(p) => format!("Some({} bytes)", p.len()),
+            None => "None".to_string(),
+        };
+        
+        f.debug_struct("NetworkPacketWithPayload")
+            .field("packet", &self.packet)
+            .field("payload", &payload_desc)
+            .finish()
+    }
+}
+
+impl From<NetworkPacket> for NetworkPacketWithPayload {
+    fn from(packet: NetworkPacket) -> Self {
+        Self {
+            packet,
+            payload: None,
+        }
+    }
+}
+
+impl NetworkPacketWithPayload {
+    pub fn new(packet: NetworkPacket, payload: Arc<Vec<u8>>) -> Self {
+        Self {
+            packet,
+            payload: Some(payload),
+        }
+    }
 }

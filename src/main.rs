@@ -2,22 +2,23 @@ use std::{
     mem::MaybeUninit,
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
+    time::Duration,
 };
 
 use anyhow::{bail, Context, Result};
 use context::AppContextRef;
 use socket2::{Domain, Socket};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufStream},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufStream},
     net::{TcpListener, TcpStream, UdpSocket},
 };
 use tokio_rustls::{
     rustls::{ClientConfig, ServerConfig, ServerName},
-    TlsConnector, TlsAcceptor,
+    TlsAcceptor, TlsConnector,
 };
 
 mod packet;
-use packet::{IdentityPacket, NetworkPacket};
+use packet::{IdentityPacket, NetworkPacket, NetworkPacketWithPayload};
 use trayicon::{Icon, MenuBuilder, MenuItem, TrayIconBuilder};
 use windows::Win32::{
     Foundation::HWND,
@@ -96,8 +97,83 @@ async fn open_payload_tcp_server() -> Result<(TcpListener, u16)> {
     return Err(last_error.unwrap().into());
 }
 
-async fn serve_payload(server: TcpListener, data: Arc<Vec<u8>>) -> Result<()> {
-    let (stream, addr) = server.accept().await?;
+async fn serve_payload(server: TcpListener, data: Arc<Vec<u8>>, ctx: AppContextRef) {
+    let task = async move {
+        loop {
+            let (stream, addr) = match server.accept().await {
+                Ok(s) => s,
+                Err(e) => {
+                    log::error!("Error accepting payload connection: {:?}", e);
+                    break;
+                }
+            };
+
+            log::info!("Payload connection from {}", addr);
+            let data = data.clone();
+            let acceptor = ctx.tls_acceptor();
+
+            tokio::spawn(async move {
+                let mut stream = match acceptor.accept(stream).await {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        log::error!("Failed to accept payload TLS connection: {}", e);
+                        return;
+                    }
+                };
+
+                if let Err(err) = stream.write_all(&data).await {
+                    log::error!("Error writing payload to {}: {:?}", addr, err);
+                    return;
+                }
+
+                if let Err(e) = stream.flush().await {
+                    log::error!("Error flushing payload to {}: {:?}", addr, e);
+                    return;
+                }
+            });
+        }
+    };
+
+    tokio::time::timeout(Duration::from_secs(60), task)
+        .await
+        .ok();
+}
+
+async fn send_packet<W: AsyncWrite + Unpin>(
+    mut stream: W,
+    mut packet: NetworkPacketWithPayload,
+    ctx: AppContextRef,
+) -> Result<()> {
+    if let Some(payload) = packet.payload {
+        match open_payload_tcp_server().await {
+            Ok((payload_server, payload_port)) => {
+                packet.packet.set_payload(payload.len() as _, payload_port);
+
+                log::info!(
+                    "Serving a payload of {} bytes on {}",
+                    payload.len(),
+                    payload_port
+                );
+
+                let ctx = ctx.clone();
+                tokio::spawn(async move {
+                    serve_payload(payload_server, payload, ctx).await;
+                });
+            }
+            Err(e) => {
+                log::error!("Failed to start payload server: {:?}", e);
+            }
+        }
+    }
+
+    let mut bytes = packet.packet.to_vec();
+    bytes.push(0x0A);
+
+    stream
+        .write_all(&bytes)
+        .await
+        .context("Write to connection")?;
+    stream.flush().await.context("Flush connection")?;
 
     Ok(())
 }
@@ -151,16 +227,10 @@ async fn handle_conn(
         tokio::select! {
             packet = packet_rx.recv() => {
                 // Send packet
-                if let Some(mut packet) = packet {
-                    packet.push(0x0A);
-                    match stream.write_all(&packet).await {
-                        Ok(_) => {
-                            log::info!("Write {} bytes to {}", packet.len(), addr);
-                        }
-                        Err(e) => {
-                            log::error!("Failed to write to connection: {:?}", e);
-                            break;
-                        }
+                if let Some(packet) = packet {
+                    if let Err(e) = send_packet(&mut stream, packet, ctx.clone()).await {
+                        log::error!("Error sending packet to {}: {:?}", addr, e);
+                        break;
                     }
                 } else {
                     log::info!("Device {} packet sender disconnected", device_id);
@@ -187,15 +257,19 @@ async fn handle_conn(
                 match serde_json::from_str::<NetworkPacket>(&line) {
                     Ok(packet) => match packet.typ.as_str() {
                         packet::PACKET_TYPE_PAIR => {
+                            // Directly handle pairing requests
                             NetworkPacket::new_pair(true)
                                 .write_to_conn(&mut stream)
                                 .await?;
                             log::info!("Accepted pairing request");
                         }
                         _ => {
+                            // Handle with plugins
                             let ctx = ctx.clone();
+                            let device_id = device_id.to_string();
+
                             tokio::spawn(async move {
-                                match ctx.plugin_repo.handle_packet(packet).await {
+                                match ctx.plugin_repo.handle_packet(device_id,packet).await {
                                     Ok(_) => {}
                                     Err(e) => {
                                         log::error!("Failed to handle packet: {:?}", e);
@@ -225,17 +299,13 @@ async fn handle_conn(
     Ok(())
 }
 
-async fn tcp_server(
-    listener: TcpListener,
-    connector: TlsConnector,
-    ctx: AppContextRef,
-) -> Result<()> {
+async fn tcp_server(listener: TcpListener, ctx: AppContextRef) -> Result<()> {
     log::info!("TCP server started");
 
     loop {
         let (stream, addr) = listener.accept().await?;
 
-        let connector = connector.clone();
+        let connector = ctx.tls_connector();
         let ctx = ctx.clone();
 
         tokio::spawn(async move {
@@ -287,6 +357,7 @@ async fn server_main() -> Result<()> {
 
     let tls_connector = TlsConnector::from(Arc::new(client_config));
     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
+    ctx.setup_tls(tls_acceptor, tls_connector);
 
     let uctx = ctx.clone();
     let udp_task = tokio::spawn(async move {
@@ -295,7 +366,7 @@ async fn server_main() -> Result<()> {
     });
 
     let tcp_task = tokio::spawn(async move {
-        let e = tcp_server(tcp_listener, tls_connector, ctx).await;
+        let e = tcp_server(tcp_listener, ctx).await;
         log::warn!("TCP server exited with {:?}", e);
     });
 
@@ -316,6 +387,7 @@ fn main() -> Result<()> {
     });
 
     #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+    #[allow(dead_code)]
     enum Events {
         ClickTrayIcon,
         DoubleClickTrayIcon,
