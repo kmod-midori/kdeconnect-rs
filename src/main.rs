@@ -230,7 +230,7 @@ async fn server_main() -> Result<()> {
 
     let config = config::Config::init_or_load("./config.json")?;
 
-    let ctx = context::ApplicationContext::new();
+    let ctx = context::ApplicationContext::new().await;
 
     let client_config = ClientConfig::builder()
         .with_safe_defaults()

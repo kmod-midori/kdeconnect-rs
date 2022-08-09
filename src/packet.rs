@@ -82,27 +82,12 @@ impl NetworkPacket {
         Self::new(
             PACKET_TYPE_IDENTITY,
             IdentityPacket {
-                device_id: "_LIVE_BEEF_".into(),
-                device_name: "LycoReco".into(),
+                device_id: "_LIVE_BEEF2_".into(),
+                device_name: "DA".into(),
                 protocol_version: 7,
                 device_type: "desktop".into(),
                 incoming_capabilities: in_caps.into_iter().collect(),
                 outgoing_capabilities: out_caps.into_iter().collect(),
-                // incoming_capabilities: vec![
-                //     "kdeconnect.ping".into(),
-                //     "kdeconnect.notification".into(),
-                //     "kdeconnect.battery".into(),
-                //     "kdeconnect.clipboard".into(),
-                //     "kdeconnect.clipboard.connect".into(),
-                //     "kdeconnect.connectivity_report".into(),
-                // ],
-                // outgoing_capabilities: vec![
-                //     "kdeconnect.ping".into(),
-
-                //     "kdeconnect.clipboard".into(),
-                //     "kdeconnect.clipboard.connect".into(),
-                //     "kdeconnect.connectivity_report.request".into(),
-                // ],
                 tcp_port: tcp_port.into(),
             },
         )

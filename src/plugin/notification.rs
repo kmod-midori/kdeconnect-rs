@@ -1,6 +1,7 @@
 use crate::packet::NetworkPacket;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
 use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
@@ -16,6 +17,7 @@ pub enum NotificationBody {
         is_clearable: bool,
         app_name: String,
         time: String, // long
+        payload_hash: Option<String>,
         ticker: Option<String>,
         title: Option<String>,
         text: Option<String>,
@@ -23,11 +25,15 @@ pub enum NotificationBody {
 }
 
 #[derive(Debug)]
-pub struct NotificationPlugin {}
+pub struct NotificationPlugin {
+    id_cache: Mutex<lru_cache::LruCache<String, ()>>,
+}
 
 impl NotificationPlugin {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            id_cache: Mutex::new(lru_cache::LruCache::new(100)),
+        }
     }
 }
 
@@ -41,18 +47,27 @@ impl KdeConnectPlugin for NotificationPlugin {
         match body {
             NotificationBody::Cancelled { .. } => {}
             NotificationBody::Posted {
+                id,
+                time,
                 title,
                 text,
                 app_name,
                 ..
             } => {
+                let mut id_cache = self.id_cache.lock().await;
+                let id_key = format!("{}|{}", id, time);
+                if id_cache.contains_key(&id_key) {
+                    return Ok(());
+                }
+
                 if let (Some(title), Some(text)) = (title, text) {
                     let _ = notify_rust::Notification::new()
-                        .appname(&format!("KDE Connect - {}", app_name))
-                        .summary(&title)
+                        .summary(&format!("{}: {}", app_name, title))
                         .body(&text)
                         .show();
                 }
+
+                id_cache.insert(id_key, ());
             }
         }
 

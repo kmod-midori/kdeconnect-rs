@@ -1,15 +1,20 @@
 use anyhow::Result;
 use std::{collections::HashSet, sync::Arc};
 
-use crate::packet::NetworkPacket;
+use crate::{packet::NetworkPacket, context::AppContextRef};
 
 mod battery;
-mod ping;
+mod clipboard;
 mod connectivity_report;
+mod mpris;
 mod notification;
+mod ping;
 
 #[async_trait::async_trait]
 pub trait KdeConnectPlugin: std::fmt::Debug + Send + Sync {
+    async fn start(self: Arc<Self>, ctx: AppContextRef) -> Result<()> {
+        Ok(())
+    }
     async fn handle(&self, packet: NetworkPacket) -> Result<()>;
 }
 
@@ -31,10 +36,21 @@ impl PluginRepository {
 
         this.register(ping::PingPlugin);
         this.register(connectivity_report::ConnectivityReportPlugin);
+        this.register(clipboard::ClipboardPlugin);
+        this.register(mpris::MprisPlugin::new());
         this.register(notification::NotificationPlugin::new());
         this.register(battery::BatteryPlugin);
 
         this
+    }
+
+    pub async fn start(&self, ctx: AppContextRef) {
+        for (_, plugin) in &self.plugins {
+            let ctx = ctx.clone();
+            let plugin = plugin.clone();
+
+            plugin.start(ctx).await;
+        }
     }
 
     pub fn register<P>(&mut self, plugin: P)
@@ -43,6 +59,8 @@ impl PluginRepository {
     {
         let in_caps = P::incomping_capabilities();
         let out_caps = P::outgoing_capabilities();
+
+        log::info!("Registering plugin: {:?} with in={:?}, out={:?}", plugin, in_caps, out_caps);
 
         self.incoming_caps.extend(in_caps.iter().cloned());
         self.outgoing_caps.extend(out_caps.into_iter());
