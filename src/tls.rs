@@ -105,6 +105,62 @@ impl tokio_rustls::rustls::client::ServerCertVerifier for ServerVerifier {
     }
 }
 
+pub struct ClientVerifier;
+
+impl tokio_rustls::rustls::server::ClientCertVerifier for ClientVerifier {
+    fn offer_client_auth(&self) -> bool {
+        true
+    }
+
+    fn client_auth_mandatory(&self) -> Option<bool> {
+        Some(false)
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &tokio_rustls::rustls::Certificate,
+        dss: &tokio_rustls::rustls::internal::msgs::handshake::DigitallySignedStruct,
+    ) -> Result<tokio_rustls::rustls::client::HandshakeSignatureValid, TlsError> {
+        let cert = get_cert(cert)?;
+        let scheme = convert_scheme(dss.scheme)?;
+        let signature = dss.sig.0.as_ref();
+
+        cert.check_signature(scheme, message, signature)
+            .map(|_| tokio_rustls::rustls::client::HandshakeSignatureValid::assertion())
+            .map_err(|_| TlsError::InvalidCertificateSignature)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &tokio_rustls::rustls::Certificate,
+        dss: &tokio_rustls::rustls::internal::msgs::handshake::DigitallySignedStruct,
+    ) -> Result<tokio_rustls::rustls::client::HandshakeSignatureValid, TlsError> {
+        let cert = get_cert(cert)?;
+        let scheme = convert_scheme(dss.scheme)?;
+        let signature = dss.sig.0.as_ref();
+
+        cert.check_tls13_signature(scheme, message, signature)
+            .map(|_| tokio_rustls::rustls::client::HandshakeSignatureValid::assertion())
+            .map_err(|_| TlsError::InvalidCertificateSignature)
+    }
+
+    fn client_auth_root_subjects(&self) -> Option<tokio_rustls::rustls::DistinguishedNames> {
+        Some(tokio_rustls::rustls::DistinguishedNames::new())
+    }
+
+    fn verify_client_cert(
+        &self,
+        end_entity: &tokio_rustls::rustls::Certificate,
+        _intermediates: &[tokio_rustls::rustls::Certificate],
+        _now: std::time::SystemTime,
+    ) -> Result<tokio_rustls::rustls::server::ClientCertVerified, TlsError> {
+        let _cert = get_cert(end_entity)?;
+        Ok(tokio_rustls::rustls::server::ClientCertVerified::assertion())
+    }
+}
+
 pub fn generate_certs(device_id: &str) -> Result<(Vec<u8>, Vec<u8>)> {
     let mut cert_params = CertificateParams::new(vec![]);
 

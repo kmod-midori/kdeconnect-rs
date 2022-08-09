@@ -9,6 +9,8 @@ use std::{
 
 use tokio::sync::mpsc;
 
+use crate::packet::NetworkPacket;
+
 static NEXT_CONN_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,6 +60,13 @@ impl DeviceManagerHandle {
         self.active_device_count
             .load(std::sync::atomic::Ordering::Relaxed)
     }
+
+    pub async fn broadcast_packet(&self, packet: NetworkPacket) {
+        log::debug!("Broadcasting {:?}", packet);
+
+        let msg = Message::BroadcastPacket { packet: packet.to_vec() };
+        self.send_message(msg).await;
+    }
 }
 
 #[derive(Debug)]
@@ -73,12 +82,15 @@ enum Message {
         id: String,
         conn_id: ConnectionId,
     },
+    BroadcastPacket {
+        packet: Vec<u8>,
+    },
 }
 
 #[derive(Debug)]
 struct Device {
     name: String,
-    remote_addr: SocketAddr,
+    _remote_addr: SocketAddr,
     conn_id: ConnectionId,
     tx: mpsc::Sender<Vec<u8>>,
 }
@@ -120,7 +132,7 @@ impl DeviceManagerActor {
                     id,
                     Device {
                         name,
-                        remote_addr: addr,
+                        _remote_addr: addr,
                         conn_id,
                         tx,
                     },
@@ -136,6 +148,13 @@ impl DeviceManagerActor {
                         self.devices.remove(&id);
                         self.update_active_device_count();
                     }
+                }
+            }
+            Message::BroadcastPacket { packet } => {
+                for device in self.devices.values() {
+                    if let Err(e) = device.tx.send(packet.clone()).await {
+                        log::error!("Failed to send packet to device {}: {}", device.name, e);
+                    };
                 }
             }
         }

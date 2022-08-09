@@ -12,7 +12,7 @@ mod ping;
 
 #[async_trait::async_trait]
 pub trait KdeConnectPlugin: std::fmt::Debug + Send + Sync {
-    async fn start(self: Arc<Self>, ctx: AppContextRef) -> Result<()> {
+    async fn start(self: Arc<Self>, _ctx: AppContextRef) -> Result<()> {
         Ok(())
     }
     async fn handle(&self, packet: NetworkPacket) -> Result<()>;
@@ -44,13 +44,14 @@ impl PluginRepository {
         this
     }
 
-    pub async fn start(&self, ctx: AppContextRef) {
+    pub async fn start(&self, ctx: AppContextRef) -> Result<()> {
         for (_, plugin) in &self.plugins {
             let ctx = ctx.clone();
             let plugin = plugin.clone();
 
-            plugin.start(ctx).await;
+            plugin.start(ctx).await?;
         }
+        Ok(())
     }
 
     pub fn register<P>(&mut self, plugin: P)
@@ -71,6 +72,8 @@ impl PluginRepository {
 
     pub async fn handle_packet(&self, packet: NetworkPacket) -> Result<()> {
         let typ = packet.typ.as_str();
+
+        log::debug!("Inbound packet: {:?}", packet);
 
         for (in_caps, plguin) in &self.plugins {
             if in_caps.contains(typ) {

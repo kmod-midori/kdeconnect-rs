@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use context::AppContextRef;
 use socket2::{Domain, Socket};
 use tokio::{
@@ -12,8 +12,8 @@ use tokio::{
     net::{TcpListener, TcpStream, UdpSocket},
 };
 use tokio_rustls::{
-    rustls::{ClientConfig, ServerName},
-    TlsConnector,
+    rustls::{ClientConfig, ServerConfig, ServerName},
+    TlsConnector, TlsAcceptor,
 };
 
 mod packet;
@@ -49,6 +49,7 @@ async fn udp_server(tcp_port: u16, ctx: AppContextRef) -> Result<()> {
         tcp_port,
         ctx.plugin_repo.incoming_caps.clone(),
         ctx.plugin_repo.outgoing_caps.clone(),
+        &ctx.config,
     );
 
     loop {
@@ -77,6 +78,28 @@ async fn open_tcp_server() -> Result<(TcpListener, u16)> {
     }
 
     return Err(last_error.unwrap().into());
+}
+
+async fn open_payload_tcp_server() -> Result<(TcpListener, u16)> {
+    const MIN_PORT: u16 = 1765;
+
+    let mut last_error = None;
+
+    for port in MIN_PORT.. {
+        let addr = (Ipv4Addr::UNSPECIFIED, port);
+        match TcpListener::bind(addr).await {
+            Ok(listener) => return Ok((listener, port)),
+            Err(err) => last_error = Some(err),
+        }
+    }
+
+    return Err(last_error.unwrap().into());
+}
+
+async fn serve_payload(server: TcpListener, data: Arc<Vec<u8>>) -> Result<()> {
+    let (stream, addr) = server.accept().await?;
+
+    Ok(())
 }
 
 async fn handle_conn(
@@ -131,7 +154,9 @@ async fn handle_conn(
                 if let Some(mut packet) = packet {
                     packet.push(0x0A);
                     match stream.write_all(&packet).await {
-                        Ok(_) => {}
+                        Ok(_) => {
+                            log::info!("Write {} bytes to {}", packet.len(), addr);
+                        }
                         Err(e) => {
                             log::error!("Failed to write to connection: {:?}", e);
                             break;
@@ -185,6 +210,11 @@ async fn handle_conn(
                 }
             }
         }
+
+        if let Err(e) = stream.flush().await {
+            log::error!("Failed to flush stream: {:?}", e);
+            break;
+        }
     }
 
     // Wait for some time before removing device and notify the user.
@@ -230,18 +260,33 @@ async fn server_main() -> Result<()> {
 
     let config = config::Config::init_or_load("./config.json")?;
 
-    let ctx = context::ApplicationContext::new().await;
+    let ctx = context::ApplicationContext::new(config)
+        .await
+        .context("Initialize context")?;
 
     let client_config = ClientConfig::builder()
         .with_safe_defaults()
         .with_custom_certificate_verifier(Arc::new(tls::ServerVerifier))
         // .with_client_cert_verifier(Arc::new(ClientVerifier))
         .with_single_cert(
-            vec![tokio_rustls::rustls::Certificate(config.tls_cert)],
-            tokio_rustls::rustls::PrivateKey(config.tls_key),
+            vec![tokio_rustls::rustls::Certificate(
+                ctx.config.tls_cert.clone(),
+            )],
+            tokio_rustls::rustls::PrivateKey(ctx.config.tls_key.clone()),
+        )?;
+
+    let server_config = ServerConfig::builder()
+        .with_safe_defaults()
+        .with_client_cert_verifier(Arc::new(tls::ClientVerifier))
+        .with_single_cert(
+            vec![tokio_rustls::rustls::Certificate(
+                ctx.config.tls_cert.clone(),
+            )],
+            tokio_rustls::rustls::PrivateKey(ctx.config.tls_key.clone()),
         )?;
 
     let tls_connector = TlsConnector::from(Arc::new(client_config));
+    let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
     let uctx = ctx.clone();
     let udp_task = tokio::spawn(async move {

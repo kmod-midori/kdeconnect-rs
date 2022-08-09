@@ -2,6 +2,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
+use crate::config::Config;
+
 pub const PACKET_TYPE_IDENTITY: &str = "kdeconnect.identity";
 pub const PACKET_TYPE_PAIR: &str = "kdeconnect.pair";
 
@@ -23,7 +25,7 @@ pub enum PacketType {
     ClipboardConnect {
         timestamp: u64,
         content: Option<String>,
-    }
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -73,7 +75,7 @@ impl NetworkPacket {
         }
     }
 
-    pub fn new_identity<P, I, O>(tcp_port: P, in_caps: I, out_caps: O) -> Self
+    pub fn new_identity<P, I, O>(tcp_port: P, in_caps: I, out_caps: O, config: &Config) -> Self
     where
         P: Into<Option<u16>>,
         I: IntoIterator<Item = String>,
@@ -82,8 +84,8 @@ impl NetworkPacket {
         Self::new(
             PACKET_TYPE_IDENTITY,
             IdentityPacket {
-                device_id: "_LIVE_BEEF2_".into(),
-                device_name: "DA".into(),
+                device_id: config.uuid.clone(),
+                device_name: gethostname::gethostname().to_string_lossy().to_string(),
                 protocol_version: 7,
                 device_type: "desktop".into(),
                 incoming_capabilities: in_caps.into_iter().collect(),

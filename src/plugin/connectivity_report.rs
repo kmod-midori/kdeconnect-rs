@@ -27,8 +27,8 @@ impl KdeConnectPlugin for ConnectivityReportPlugin {
     async fn handle(&self, packet: NetworkPacket) -> Result<()> {
         match packet.typ.as_str() {
             "kdeconnect.connectivity_report" => {
-                let strengths: ConnectivityReport = packet.into_body()?;
-                log::info!("Connectivity report: {:?}", strengths);
+                // let strengths: ConnectivityReport = packet.into_body()?;
+                // log::info!("Connectivity report: {:?}", strengths);
             }
             "kdeconnect.connectivity_report.request" => {
                 // ignore
