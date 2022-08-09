@@ -44,5 +44,6 @@ features = [
     "Foundation",
     "Foundation_Collections",
     "ApplicationModel",
-    "Storage_Streams"
+    "Storage_Streams",
+    "Win32_UI_Input_KeyboardAndMouse",
 ]

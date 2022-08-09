@@ -8,6 +8,7 @@ mod clipboard;
 mod connectivity_report;
 mod mpris;
 mod receive_notifications;
+mod receive_mouse;
 mod ping;
 
 #[async_trait::async_trait]
@@ -45,6 +46,7 @@ impl PluginRepository {
         this.register(clipboard::ClipboardPlugin);
         this.register(mpris::MprisPlugin::new());
         this.register(receive_notifications::ReceiveNotificationsPlugin::new());
+        this.register(receive_mouse::ReceiveMousePlugin);
         this.register(battery::BatteryPlugin);
 
         this
