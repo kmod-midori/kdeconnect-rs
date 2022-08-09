@@ -24,11 +24,11 @@ pub enum NotificationBody {
 }
 
 #[derive(Debug)]
-pub struct NotificationPlugin {
+pub struct ReceiveNotificationsPlugin {
     id_cache: Mutex<lru_cache::LruCache<String, ()>>,
 }
 
-impl NotificationPlugin {
+impl ReceiveNotificationsPlugin {
     pub fn new() -> Self {
         Self {
             id_cache: Mutex::new(lru_cache::LruCache::new(100)),
@@ -37,7 +37,7 @@ impl NotificationPlugin {
 }
 
 #[async_trait::async_trait]
-impl KdeConnectPlugin for NotificationPlugin {
+impl KdeConnectPlugin for ReceiveNotificationsPlugin {
     async fn handle(&self, packet: IncomingPacket) -> Result<()> {
         let body: NotificationBody = packet.inner.into_body()?;
 
@@ -74,8 +74,8 @@ impl KdeConnectPlugin for NotificationPlugin {
     }
 }
 
-impl KdeConnectPluginMetadata for NotificationPlugin {
-    fn incomping_capabilities() -> Vec<String> {
+impl KdeConnectPluginMetadata for ReceiveNotificationsPlugin {
+    fn incoming_capabilities() -> Vec<String> {
         vec!["kdeconnect.notification".into()]
     }
     fn outgoing_capabilities() -> Vec<String> {

@@ -14,7 +14,7 @@ impl KdeConnectPlugin for ClipboardPlugin {
 }
 
 impl KdeConnectPluginMetadata for ClipboardPlugin {
-    fn incomping_capabilities() -> Vec<String> {
+    fn incoming_capabilities() -> Vec<String> {
         vec![
             "kdeconnect.clipboard".into(),
             "kdeconnect.clipboard.connect".into(),

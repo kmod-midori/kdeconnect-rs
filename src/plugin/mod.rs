@@ -7,7 +7,7 @@ mod battery;
 mod clipboard;
 mod connectivity_report;
 mod mpris;
-mod notification;
+mod receive_notifications;
 mod ping;
 
 #[async_trait::async_trait]
@@ -19,7 +19,7 @@ pub trait KdeConnectPlugin: std::fmt::Debug + Send + Sync {
 }
 
 pub trait KdeConnectPluginMetadata {
-    fn incomping_capabilities() -> Vec<String>;
+    fn incoming_capabilities() -> Vec<String>;
     fn outgoing_capabilities() -> Vec<String>;
 }
 
@@ -44,7 +44,7 @@ impl PluginRepository {
         this.register(connectivity_report::ConnectivityReportPlugin);
         this.register(clipboard::ClipboardPlugin);
         this.register(mpris::MprisPlugin::new());
-        this.register(notification::NotificationPlugin::new());
+        this.register(receive_notifications::ReceiveNotificationsPlugin::new());
         this.register(battery::BatteryPlugin);
 
         this
@@ -64,7 +64,7 @@ impl PluginRepository {
     where
         P: KdeConnectPlugin + KdeConnectPluginMetadata + 'static,
     {
-        let in_caps = P::incomping_capabilities();
+        let in_caps = P::incoming_capabilities();
         let out_caps = P::outgoing_capabilities();
 
         log::info!(

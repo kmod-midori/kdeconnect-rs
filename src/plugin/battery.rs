@@ -34,7 +34,7 @@ impl KdeConnectPlugin for BatteryPlugin {
 }
 
 impl KdeConnectPluginMetadata for BatteryPlugin {
-    fn incomping_capabilities() -> Vec<String> {
+    fn incoming_capabilities() -> Vec<String> {
         vec![
             "kdeconnect.battery".into(),
             "kdeconnect.battery.request".into(),

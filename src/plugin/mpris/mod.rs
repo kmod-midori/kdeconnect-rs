@@ -549,7 +549,7 @@ impl KdeConnectPlugin for MprisPlugin {
 }
 
 impl KdeConnectPluginMetadata for MprisPlugin {
-    fn incomping_capabilities() -> Vec<String> {
+    fn incoming_capabilities() -> Vec<String> {
         vec![PACKET_TYPE_MPRIS.into(), PACKET_TYPE_MPRIS_REQUEST.into()]
     }
     fn outgoing_capabilities() -> Vec<String> {

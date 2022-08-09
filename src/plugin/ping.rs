@@ -14,7 +14,7 @@ impl KdeConnectPlugin for PingPlugin {
 }
 
 impl KdeConnectPluginMetadata for PingPlugin {
-    fn incomping_capabilities() -> Vec<String> {
+    fn incoming_capabilities() -> Vec<String> {
         vec!["kdeconnect.ping".into()]
     }
     fn outgoing_capabilities() -> Vec<String> {

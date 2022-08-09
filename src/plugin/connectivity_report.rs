@@ -40,7 +40,7 @@ impl KdeConnectPlugin for ConnectivityReportPlugin {
 }
 
 impl KdeConnectPluginMetadata for ConnectivityReportPlugin {
-    fn incomping_capabilities() -> Vec<String> {
+    fn incoming_capabilities() -> Vec<String> {
         vec![
             "kdeconnect.connectivity_report".into(),
             "kdeconnect.connectivity_report.request".into(),
