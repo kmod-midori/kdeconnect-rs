@@ -11,6 +11,7 @@ use socket2::{Domain, Socket};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufStream},
     net::{TcpListener, TcpStream, UdpSocket},
+    sync::mpsc,
 };
 use tokio_rustls::{
     rustls::{ClientConfig, ServerConfig, ServerName},
@@ -28,8 +29,11 @@ use windows::Win32::{
 mod config;
 mod context;
 mod device;
+mod event;
 mod plugin;
 mod tls;
+mod utils;
+mod window;
 
 async fn udp_server(tcp_port: u16, ctx: AppContextRef) -> Result<()> {
     let socket = Socket::new(
@@ -322,8 +326,17 @@ async fn tcp_server(listener: TcpListener, ctx: AppContextRef) -> Result<()> {
     }
 }
 
+async fn event_handler(mut rx: event::EventReceiver, ctx: AppContextRef) {
+    while let Some(message) = rx.recv().await {
+        let ctx = ctx.clone();
+        tokio::spawn(async move {
+            ctx.plugin_repo.handle_event(message).await;
+        });
+    }
+}
+
 #[tokio::main]
-async fn server_main() -> Result<()> {
+async fn server_main(event_tx: event::EventSender, event_rx: event::EventReceiver) -> Result<()> {
     let (tcp_listener, tcp_port) = open_tcp_server().await?;
 
     log::info!("TCP port: {}", tcp_port);
@@ -365,6 +378,12 @@ async fn server_main() -> Result<()> {
         log::warn!("UDP server exited with {:?}", e);
     });
 
+    let ectx = ctx.clone();
+    let event_task = tokio::spawn(async move {
+        event_handler(event_rx, ectx).await;
+        log::warn!("Event handler exited");
+    });
+
     let tcp_task = tokio::spawn(async move {
         let e = tcp_server(tcp_listener, ctx).await;
         log::warn!("TCP server exited with {:?}", e);
@@ -372,6 +391,7 @@ async fn server_main() -> Result<()> {
 
     udp_task.await?;
     tcp_task.await?;
+    event_task.await?;
 
     Ok(())
 }
@@ -379,8 +399,12 @@ async fn server_main() -> Result<()> {
 fn main() -> Result<()> {
     setup_logger().expect("Failed to set up logger");
 
+    let (event_tx, event_rx) = mpsc::channel(10);
+
+    window::MyWindow::create(event_tx.clone())?;
+
     std::thread::spawn(|| {
-        let r = server_main();
+        let r = server_main(event_tx, event_rx);
         if let Err(e) = r {
             log::error!("Server exited with error: {}", e);
         }

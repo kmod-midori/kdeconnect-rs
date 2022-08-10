@@ -4,17 +4,10 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use crate::config::Config;
+use crate::{config::Config, utils};
 
 pub const PACKET_TYPE_IDENTITY: &str = "kdeconnect.identity";
 pub const PACKET_TYPE_PAIR: &str = "kdeconnect.pair";
-
-fn unix_ts_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type", content = "body")]
@@ -71,7 +64,7 @@ impl NetworkPacket {
         Self {
             typ: typ.into(),
             body: serde_json::to_value(body).expect("Failed to serialize body"),
-            id: unix_ts_ms(),
+            id: utils::unix_ts_ms(),
             payload_size: None,
             payload_transfer_info: None,
         }
@@ -107,7 +100,7 @@ impl NetworkPacket {
 
     /// Reset the timestamp of the packet to the current time.
     pub fn reset_ts(&mut self) {
-        self.id = unix_ts_ms();
+        self.id = utils::unix_ts_ms();
     }
 
     pub async fn write_to_conn<W: AsyncWrite + Unpin>(

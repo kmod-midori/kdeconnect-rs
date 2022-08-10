@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::{collections::HashSet, sync::Arc};
 
-use crate::{context::AppContextRef, packet::NetworkPacket};
+use crate::{context::AppContextRef, packet::NetworkPacket, event::KdeConnectEvent};
 
 mod battery;
 mod clipboard;
@@ -17,6 +17,12 @@ pub trait KdeConnectPlugin: std::fmt::Debug + Send + Sync {
         Ok(())
     }
     async fn handle(&self, packet: IncomingPacket) -> Result<()>;
+    async fn handle_event(&self, _event: KdeConnectEvent) -> Result<()> {
+        Ok(())
+    }
+    async fn hotkeys(&self) -> Vec<()> {
+        vec![]
+    }
 }
 
 pub trait KdeConnectPluginMetadata {
@@ -43,7 +49,7 @@ impl PluginRepository {
 
         this.register(ping::PingPlugin);
         this.register(connectivity_report::ConnectivityReportPlugin);
-        this.register(clipboard::ClipboardPlugin);
+        this.register(clipboard::ClipboardPlugin::new());
         this.register(mpris::MprisPlugin::new());
         this.register(receive_notifications::ReceiveNotificationsPlugin::new());
         this.register(receive_mouse::ReceiveMousePlugin);
@@ -97,5 +103,13 @@ impl PluginRepository {
         }
 
         Err(anyhow::anyhow!("No plugin found for packet type {}", typ))
+    }
+
+    pub async fn handle_event(&self, event: KdeConnectEvent) {
+        for (_, plugin) in &self.plugins {
+            if let Err(e) = plugin.handle_event(event.clone()).await {
+                log::error!("Error handling event: {}", e);
+            }
+        }
     }
 }

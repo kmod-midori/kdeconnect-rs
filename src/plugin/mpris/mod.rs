@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::{
     context::AppContextRef,
@@ -203,10 +203,11 @@ impl MprisPlugin {
         let mut metadatas = self.metadatas.lock().await;
         let mut update_thumbnail = true;
         if let Some(current_metadata) = metadatas.get(sid) {
-            if current_metadata == &mm {
-                // No need to update
+            if current_metadata == &mm && mm.properties.album_art_url.is_some() {
+                // No need to update, we already have the thumbnail
                 return Ok(());
             }
+            
             // Metadata as a whole has changed
             if current_metadata.properties == mm.properties {
                 // No need to update thumbnail
@@ -270,6 +271,15 @@ impl MprisPlugin {
         Ok(())
     }
 
+    async fn update_metadata_with_retry(&self, sid: &str) {
+        log_if_error("Failed to update metadata", self.update_metadata(sid).await);
+
+        // Some delay to ensure that thumbnail is populated
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        log_if_error("Failed to update metadata", self.update_metadata(sid).await);
+    }
+
     async fn init_session(
         self: Arc<Self>,
         session: GlobalSystemMediaTransportControlsSession,
@@ -286,10 +296,7 @@ impl MprisPlugin {
                 let sid = sid.clone();
 
                 this.rt_handle.clone().spawn(async move {
-                    log_if_error(
-                        "Failed to handle MediaPropertiesChanged",
-                        this.update_metadata(&sid).await,
-                    );
+                    this.update_metadata_with_retry(&sid).await;
                 });
 
                 Ok(())
@@ -306,10 +313,7 @@ impl MprisPlugin {
                 let sid = sid.clone();
 
                 this.rt_handle.clone().spawn(async move {
-                    log_if_error(
-                        "Failed to handle PlaybackInfoChanged",
-                        this.update_metadata(&sid).await,
-                    );
+                    this.update_metadata_with_retry(&sid).await;
                 });
 
                 Ok(())
@@ -357,10 +361,10 @@ impl MprisPlugin {
         self.send_player_list().await;
 
         for id in ids {
-            log_if_error(
-                "Failed to initialize metadata",
-                self.update_metadata(&id).await,
-            );
+            let this = self.clone();
+            tokio::spawn(async move {
+                this.update_metadata_with_retry(&id).await;
+            });
         }
 
         Ok(())
