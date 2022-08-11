@@ -1,13 +1,15 @@
 use anyhow::Result;
 
-use super::{KdeConnectPlugin, KdeConnectPluginMetadata, IncomingPacket};
+use crate::packet::NetworkPacket;
+
+use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
 #[derive(Debug)]
 pub struct PingPlugin;
 
 #[async_trait::async_trait]
 impl KdeConnectPlugin for PingPlugin {
-    async fn handle(&self, packet: IncomingPacket) -> Result<()> {
+    async fn handle(&self, packet: NetworkPacket) -> Result<()> {
         dbg!(packet);
         Ok(())
     }

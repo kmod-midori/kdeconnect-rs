@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -7,14 +8,74 @@ use std::{
     },
 };
 
-use tokio::sync::mpsc;
+use tokio::{
+    io::AsyncReadExt,
+    sync::{mpsc, oneshot},
+};
 
-use crate::packet::NetworkPacketWithPayload;
+use crate::{
+    context::AppContextRef,
+    event::KdeConnectEvent,
+    packet::{NetworkPacket, NetworkPacketWithPayload},
+    plugin::PluginRepository,
+};
 
 static NEXT_CONN_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConnectionId(usize);
+
+#[derive(Clone)]
+pub struct DeviceHandle {
+    device_id: Arc<String>,
+    manager_handle: DeviceManagerHandle,
+}
+
+impl std::fmt::Debug for DeviceHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeviceHandle")
+            .field("device_id", &self.device_id)
+            .finish()
+    }
+}
+
+impl DeviceHandle {
+    pub fn device_id(&self) -> &str {
+        &self.device_id
+    }
+
+    /// Send packet to device
+    pub async fn send_packet(&self, packet: impl Into<NetworkPacketWithPayload>) {
+        self.manager_handle
+            .send_packet(self.device_id(), packet)
+            .await;
+    }
+
+    /// Dispatch received packet from the device to plugins
+    pub async fn dispatch_packet(&self, packet: impl Into<NetworkPacket>) {
+        self.manager_handle
+            .send_message(Message::Packet {
+                device_id: self.device_id.to_string(),
+                packet: packet.into(),
+            })
+            .await;
+    }
+
+    pub async fn fetch_payload(&self, port: u16, size: usize) -> Result<Vec<u8>> {
+        let (tx, rx) = oneshot::channel();
+
+        self.manager_handle
+            .send_message(Message::FetchPayload {
+                device_id: self.device_id.to_string(),
+                port,
+                size,
+                reply: tx,
+            })
+            .await;
+
+        rx.await?
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct DeviceManagerHandle {
@@ -28,9 +89,15 @@ impl DeviceManagerHandle {
         id: impl Into<String>,
         name: impl Into<String>,
         addr: SocketAddr,
-    ) -> (ConnectionId, mpsc::Receiver<NetworkPacketWithPayload>) {
+    ) -> Result<(
+        ConnectionId,
+        mpsc::Receiver<NetworkPacketWithPayload>,
+        DeviceHandle,
+    )> {
         let (tx, rx) = mpsc::channel(1);
         let conn_id = ConnectionId(NEXT_CONN_ID.fetch_add(1, Ordering::Relaxed));
+
+        let (reply_tx, reply_rx) = oneshot::channel();
 
         let msg = Message::AddDevice {
             id: id.into(),
@@ -38,10 +105,17 @@ impl DeviceManagerHandle {
             addr,
             conn_id,
             tx,
+            reply: reply_tx,
         };
         self.send_message(msg).await;
 
-        (conn_id, rx)
+        Ok((
+            conn_id,
+            rx,
+            reply_rx
+                .await
+                .map_err(|_| anyhow::anyhow!("Failed to get device handle"))?,
+        ))
     }
 
     pub async fn remove_device(&self, id: impl Into<String>, conn_id: ConnectionId) {
@@ -61,14 +135,9 @@ impl DeviceManagerHandle {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub async fn broadcast_packet(&self, packet: impl Into<NetworkPacketWithPayload>) {
-        let packet: NetworkPacketWithPayload = packet.into();
-
-        let msg = Message::SendPacket {
-            device_id: None,
-            packet,
-        };
-        self.send_message(msg).await;
+    /// Broadcast an event to all plugins.
+    pub async fn broadcast_event(&self, event: KdeConnectEvent) {
+        self.send_message(Message::Event(event)).await;
     }
 
     pub async fn send_packet(&self, device_id: &str, packet: impl Into<NetworkPacketWithPayload>) {
@@ -90,6 +159,7 @@ enum Message {
         addr: SocketAddr,
         conn_id: ConnectionId,
         tx: mpsc::Sender<NetworkPacketWithPayload>,
+        reply: oneshot::Sender<DeviceHandle>,
     },
     RemoveDevice {
         id: String,
@@ -99,40 +169,57 @@ enum Message {
         device_id: Option<String>,
         packet: NetworkPacketWithPayload,
     },
+    Event(KdeConnectEvent),
+    Packet {
+        device_id: String,
+        packet: NetworkPacket,
+    },
+    FetchPayload {
+        device_id: String,
+        port: u16,
+        size: usize,
+        reply: oneshot::Sender<Result<Vec<u8>>>,
+    },
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct Device {
     name: String,
-    _remote_addr: SocketAddr,
+    remote_addr: SocketAddr,
     conn_id: ConnectionId,
     tx: mpsc::Sender<NetworkPacketWithPayload>,
+    plugin_repo: Arc<PluginRepository>,
 }
 
 pub struct DeviceManagerActor {
     receiver: mpsc::Receiver<Message>,
     devices: HashMap<String, Device>,
     active_device_count: Arc<AtomicUsize>,
+    handle: DeviceManagerHandle,
 }
 
 impl DeviceManagerActor {
     pub fn new() -> (Self, DeviceManagerHandle) {
         let (sender, receiver) = mpsc::channel(100);
-        let actor = Self {
-            receiver,
-            devices: HashMap::new(),
-            active_device_count: Arc::new(AtomicUsize::new(0)),
-        };
+        let active_device_count = Arc::new(AtomicUsize::new(0));
 
         let handle = DeviceManagerHandle {
             sender,
-            active_device_count: actor.active_device_count.clone(),
+            active_device_count: active_device_count.clone(),
+        };
+
+        let actor = Self {
+            receiver,
+            devices: HashMap::new(),
+            active_device_count,
+            handle: handle.clone(),
         };
 
         (actor, handle)
     }
 
-    async fn handle_message(&mut self, msg: Message) {
+    async fn handle_message(&mut self, msg: Message, ctx: &AppContextRef) {
         match msg {
             Message::AddDevice {
                 id,
@@ -140,17 +227,34 @@ impl DeviceManagerActor {
                 addr,
                 conn_id,
                 tx,
+                reply,
             } => {
-                log::info!("Added device: {}", id);
-                self.devices.insert(
-                    id,
-                    Device {
-                        name,
-                        _remote_addr: addr,
-                        conn_id,
-                        tx,
-                    },
-                );
+                log::info!("Adding device: {}", id);
+
+                let dh = DeviceHandle {
+                    device_id: Arc::new(id.clone()),
+                    manager_handle: self.handle.clone(),
+                };
+
+                if let Some(device) = self.devices.get_mut(&id) {
+                    device.remote_addr = addr;
+                    device.conn_id = conn_id;
+                    device.tx = tx;
+                } else {
+                    let plugin_repo = PluginRepository::new(dh.clone(), ctx.clone()).await;
+                    self.devices.insert(
+                        id,
+                        Device {
+                            name,
+                            remote_addr: addr,
+                            conn_id,
+                            tx,
+                            plugin_repo: Arc::new(plugin_repo),
+                        },
+                    );
+                }
+
+                let _ = reply.send(dh);
 
                 self.update_active_device_count();
             }
@@ -167,7 +271,7 @@ impl DeviceManagerActor {
             Message::SendPacket { packet, device_id } => {
                 if let Some(device_id) = device_id {
                     log::debug!("Sending {:?} to {}", packet, device_id);
-                    
+
                     if let Some(device) = self.devices.get(&device_id) {
                         if let Err(e) = device.tx.send(packet).await {
                             log::error!("Failed to send packet to device {}: {}", device.name, e);
@@ -183,6 +287,65 @@ impl DeviceManagerActor {
                     }
                 }
             }
+            Message::Event(event) => {
+                for (_, device) in &self.devices {
+                    let pr = device.plugin_repo.clone();
+                    let event = event.clone();
+
+                    tokio::spawn(async move {
+                        pr.handle_event(event).await;
+                    });
+                }
+            }
+            Message::Packet { device_id, packet } => {
+                let device = if let Some(device) = self.devices.get_mut(&device_id) {
+                    device
+                } else {
+                    log::warn!("Device {} not found", device_id);
+                    return;
+                };
+                let pr = device.plugin_repo.clone();
+
+                tokio::spawn(async move {
+                    if let Err(e) = pr.handle_packet(packet).await {
+                        log::error!("Failed to handle packet from {}: {:?}", device_id, e);
+                    }
+                });
+            }
+            Message::FetchPayload {
+                device_id,
+                port,
+                size,
+                reply,
+            } => {
+                let device = if let Some(device) = self.devices.get_mut(&device_id) {
+                    device
+                } else {
+                    let _ = reply.send(Err(anyhow::anyhow!("Device {} not found", device_id)));
+                    return;
+                };
+                let remote_ip = device.remote_addr.ip();
+                let ctx = ctx.clone();
+
+                tokio::spawn(async move {
+                    let task = async {
+                        let mut conn = ctx.tls_connect((remote_ip, port)).await?;
+                        let mut buf = Vec::with_capacity(size as usize);
+                        conn.read_to_end(&mut buf).await?;
+
+                        if buf.len() == size {
+                            Ok(buf)
+                        } else {
+                            Err(anyhow::anyhow!(
+                                "Payload size mismatch: {} (fetched) != {} (requested)",
+                                buf.len(),
+                                size
+                            ))
+                        }
+                    };
+                    let _ = reply.send(task.await);
+                });
+            }
         }
     }
 
@@ -193,10 +356,10 @@ impl DeviceManagerActor {
     }
 
     /// Spawn the actor to a background task.
-    pub fn run(mut self) {
+    pub fn run(mut self, ctx: AppContextRef) {
         tokio::spawn(async move {
             while let Some(msg) = self.receiver.recv().await {
-                self.handle_message(msg).await;
+                self.handle_message(msg, &ctx).await;
             }
         });
     }

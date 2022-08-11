@@ -2,10 +2,12 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::{
     context::AppContextRef,
+    device::DeviceHandle,
+    event::KdeConnectEvent,
     packet::{NetworkPacket, NetworkPacketWithPayload},
+    utils, cache::PAYLOAD_CACHE,
 };
 use anyhow::{Context, Result};
-use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -19,19 +21,13 @@ use windows::{
     Storage::Streams::DataReader,
 };
 
-mod cache;
-
-use super::{IncomingPacket, KdeConnectPlugin, KdeConnectPluginMetadata};
+use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
 const PACKET_TYPE_MPRIS: &str = "kdeconnect.mpris";
 const PACKET_TYPE_MPRIS_REQUEST: &str = "kdeconnect.mpris.request";
 const COVER_URL_PREFIX: &str = "file:///";
 
-fn log_if_error<R, E: std::fmt::Debug>(text: &str, res: Result<R, E>) {
-    if let Err(e) = res {
-        log::error!("{}: {:?}", text, e);
-    }
-}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -132,32 +128,26 @@ struct MprisRequest {
 
 #[derive(Debug)]
 pub struct MprisPlugin {
-    ctx: OnceCell<AppContextRef>,
-    manager: OnceCell<GlobalSystemMediaTransportControlsSessionManager>,
+    ctx: AppContextRef,
+    manager: GlobalSystemMediaTransportControlsSessionManager,
+    device: DeviceHandle,
     sessions: Mutex<HashMap<String, CurrentSession>>,
     metadatas: Mutex<HashMap<String, MprisMetadata>>,
-    album_art_cache: cache::AlbumArtCache,
     rt_handle: tokio::runtime::Handle,
 }
 
 impl MprisPlugin {
-    pub fn new() -> Self {
-        Self {
-            ctx: OnceCell::new(),
-            manager: OnceCell::new(),
+    pub async fn new(dev: DeviceHandle, ctx: AppContextRef) -> Result<Self> {
+        let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()?.await?;
+
+        Ok(Self {
+            ctx,
+            manager,
+            device: dev,
             sessions: Mutex::new(HashMap::new()),
             metadatas: Mutex::new(HashMap::new()),
-            album_art_cache: cache::AlbumArtCache::new(),
             rt_handle: tokio::runtime::Handle::current(),
-        }
-    }
-
-    fn ctx(&self) -> &AppContextRef {
-        self.ctx.get().expect("ctx is not initialized")
-    }
-
-    fn manager(&self) -> &GlobalSystemMediaTransportControlsSessionManager {
-        self.manager.get().expect("manager is not initialized")
+        })
     }
 
     async fn update_metadata(&self, sid: &str) -> Result<()> {
@@ -207,7 +197,7 @@ impl MprisPlugin {
                 // No need to update, we already have the thumbnail
                 return Ok(());
             }
-            
+
             // Metadata as a whole has changed
             if current_metadata.properties == mm.properties {
                 // No need to update thumbnail
@@ -254,7 +244,7 @@ impl MprisPlugin {
             match task.await? {
                 Ok((filename, buffer)) => {
                     log::info!("Thumbnail loaded for {} ({} bytes)", sid, buffer.len());
-                    self.album_art_cache.put(&filename, buffer).await?;
+                    PAYLOAD_CACHE.put(&filename, buffer).await?;
                     mm.properties.album_art_url = Some(format!("{}{}", COVER_URL_PREFIX, filename));
                 }
                 Err(e) => {
@@ -272,12 +262,12 @@ impl MprisPlugin {
     }
 
     async fn update_metadata_with_retry(&self, sid: &str) {
-        log_if_error("Failed to update metadata", self.update_metadata(sid).await);
+        utils::log_if_error("Failed to update metadata", self.update_metadata(sid).await);
 
         // Some delay to ensure that thumbnail is populated
         tokio::time::sleep(Duration::from_secs(5)).await;
 
-        log_if_error("Failed to update metadata", self.update_metadata(sid).await);
+        utils::log_if_error("Failed to update metadata", self.update_metadata(sid).await);
     }
 
     async fn init_session(
@@ -329,9 +319,9 @@ impl MprisPlugin {
 
     async fn handle_sessions_changed(self: Arc<Self>) -> Result<()> {
         log::info!("SessionsChanged");
-        let manager = self.manager();
 
-        let sessions = manager
+        let sessions = self
+            .manager
             .GetSessions()
             .context("Get sessions")?
             .into_iter()
@@ -384,7 +374,7 @@ impl MprisPlugin {
             },
         );
 
-        self.ctx().device_manager.broadcast_packet(packet).await;
+        self.device.send_packet(packet).await;
     }
 
     async fn send_now_playing(&self, sid: &str) {
@@ -394,12 +384,13 @@ impl MprisPlugin {
                 PACKET_TYPE_MPRIS,
                 MprisPacket::Metadata(current_metadata.clone()),
             );
-            self.ctx().device_manager.broadcast_packet(packet).await;
+
+            self.device.send_packet(packet).await;
         }
     }
 
-    async fn send_album_art(&self, device_id: &str, filename: &str) {
-        let data = match self.album_art_cache.get(filename).await {
+    async fn send_album_art(&self, filename: &str) {
+        let data = match PAYLOAD_CACHE.get(filename).await {
             Ok(Some(data)) => data,
             Ok(None) => {
                 log::warn!("Album art not found: {}", filename);
@@ -418,9 +409,9 @@ impl MprisPlugin {
                 album_art_url: format!("{}{}", COVER_URL_PREFIX, filename),
             },
         );
-        self.ctx()
-            .device_manager
-            .send_packet(device_id, NetworkPacketWithPayload::new(packet, data))
+
+        self.device
+            .send_packet(NetworkPacketWithPayload::new(packet, data))
             .await;
     }
 
@@ -470,50 +461,36 @@ impl MprisPlugin {
 
 #[async_trait::async_trait]
 impl KdeConnectPlugin for MprisPlugin {
-    async fn start(self: Arc<Self>, ctx: AppContextRef) -> Result<()> {
-        self.ctx.set(ctx).expect("ctx is already initialized");
-
-        let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()?.await?;
-        self.manager
-            .set(manager)
-            .expect("manager is already initialized");
-
-        let manager = self.manager();
-
-        self.album_art_cache
-            .start()
-            .await
-            .context("Initialize album art cache")?;
-
-        let this = self.clone();
-        manager.SessionsChanged(&TypedEventHandler::new(move |_, _| {
-            let this = this.clone();
-            this.rt_handle.clone().spawn(async move {
-                log_if_error(
-                    "Failed to handle SessionsChanged",
-                    this.handle_sessions_changed().await,
-                );
-            });
-
-            Ok(())
-        }))?;
-
-        log_if_error(
+    async fn start(self: Arc<Self>) -> Result<()> {
+        utils::log_if_error(
             "Failed to initialize sessions",
             self.handle_sessions_changed().await,
         );
+        Ok(())
+    }
+
+    async fn handle_event(self: Arc<Self>, event: KdeConnectEvent) -> Result<()> {
+        match event {
+            KdeConnectEvent::MediaSessionsChanged => {
+                utils::log_if_error(
+                    "Failed to update sessions",
+                    self.handle_sessions_changed().await,
+                );
+            }
+            _ => {}
+        };
 
         Ok(())
     }
 
-    async fn handle(&self, packet: IncomingPacket) -> Result<()> {
-        match packet.inner.typ.as_str() {
+    async fn handle(&self, packet: NetworkPacket) -> Result<()> {
+        match packet.typ.as_str() {
             PACKET_TYPE_MPRIS => {
                 // let body: MprisPacket = packet.into_body()?;
                 // dbg!(body);
             }
             PACKET_TYPE_MPRIS_REQUEST => {
-                let body: MprisRequest = packet.inner.into_body()?;
+                let body: MprisRequest = packet.into_body()?;
 
                 if body.request_player_list == Some(true) {
                     log::debug!("Request player list");
@@ -532,7 +509,7 @@ impl KdeConnectPlugin for MprisPlugin {
 
                     if url.len() > COVER_URL_PREFIX.len() {
                         let filename = &url[COVER_URL_PREFIX.len()..];
-                        self.send_album_art(&packet.device_id, filename).await;
+                        self.send_album_art(filename).await;
                     } else {
                         log::warn!("Invalid album art url (too short): {}", url);
                     }

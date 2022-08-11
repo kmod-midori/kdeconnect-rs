@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use super::{KdeConnectPlugin, KdeConnectPluginMetadata, IncomingPacket};
+use crate::packet::NetworkPacket;
+
+use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,8 +25,8 @@ pub struct ConnectivityReportPlugin;
 
 #[async_trait::async_trait]
 impl KdeConnectPlugin for ConnectivityReportPlugin {
-    async fn handle(&self, packet: IncomingPacket) -> Result<()> {
-        match packet.inner.typ.as_str() {
+    async fn handle(&self, packet: NetworkPacket) -> Result<()> {
+        match packet.typ.as_str() {
             "kdeconnect.connectivity_report" => {
                 // let strengths: ConnectivityReport = packet.into_body()?;
                 // log::info!("Connectivity report: {:?}", strengths);

@@ -1,23 +1,26 @@
 use anyhow::Result;
 use std::{collections::HashSet, sync::Arc};
 
-use crate::{context::AppContextRef, packet::NetworkPacket, event::KdeConnectEvent};
+use crate::{
+    context::AppContextRef, device::DeviceHandle, event::KdeConnectEvent, packet::NetworkPacket,
+    utils,
+};
 
 mod battery;
 mod clipboard;
 mod connectivity_report;
 mod mpris;
-mod receive_notifications;
-mod receive_mouse;
 mod ping;
+mod receive_mouse;
+mod receive_notifications;
 
 #[async_trait::async_trait]
 pub trait KdeConnectPlugin: std::fmt::Debug + Send + Sync {
-    async fn start(self: Arc<Self>, _ctx: AppContextRef) -> Result<()> {
+    async fn start(self: Arc<Self>) -> Result<()> {
         Ok(())
     }
-    async fn handle(&self, packet: IncomingPacket) -> Result<()>;
-    async fn handle_event(&self, _event: KdeConnectEvent) -> Result<()> {
+    async fn handle(&self, packet: NetworkPacket) -> Result<()>;
+    async fn handle_event(self: Arc<Self>, _event: KdeConnectEvent) -> Result<()> {
         Ok(())
     }
     async fn hotkeys(&self) -> Vec<()> {
@@ -30,10 +33,32 @@ pub trait KdeConnectPluginMetadata {
     fn outgoing_capabilities() -> Vec<String>;
 }
 
-#[derive(Debug, Clone)]
-pub struct IncomingPacket {
-    device_id: String,
-    inner: NetworkPacket,
+lazy_static::lazy_static! {
+    pub static ref ALL_CAPS: (Vec<String>, Vec<String>) = {
+        let mut incoming_caps = vec![];
+        let mut outgoing_caps = vec![];
+
+        incoming_caps.extend(ping::PingPlugin::incoming_capabilities());
+        outgoing_caps.extend(ping::PingPlugin::outgoing_capabilities());
+        incoming_caps
+            .extend(connectivity_report::ConnectivityReportPlugin::incoming_capabilities());
+        outgoing_caps
+            .extend(connectivity_report::ConnectivityReportPlugin::outgoing_capabilities());
+        incoming_caps.extend(clipboard::ClipboardPlugin::incoming_capabilities());
+        outgoing_caps.extend(clipboard::ClipboardPlugin::outgoing_capabilities());
+        incoming_caps.extend(mpris::MprisPlugin::incoming_capabilities());
+        outgoing_caps.extend(mpris::MprisPlugin::outgoing_capabilities());
+        incoming_caps
+            .extend(receive_notifications::ReceiveNotificationsPlugin::incoming_capabilities());
+        outgoing_caps
+            .extend(receive_notifications::ReceiveNotificationsPlugin::outgoing_capabilities());
+        incoming_caps.extend(receive_mouse::ReceiveMousePlugin::incoming_capabilities());
+        outgoing_caps.extend(receive_mouse::ReceiveMousePlugin::outgoing_capabilities());
+        incoming_caps.extend(battery::BatteryPlugin::incoming_capabilities());
+        outgoing_caps.extend(battery::BatteryPlugin::outgoing_capabilities());
+
+        (incoming_caps, outgoing_caps)
+    };
 }
 
 #[derive(Debug, Default)]
@@ -44,28 +69,40 @@ pub struct PluginRepository {
 }
 
 impl PluginRepository {
-    pub fn new() -> Self {
+    pub async fn new(dev: DeviceHandle, ctx: AppContextRef) -> Self {
         let mut this = Self::default();
 
         this.register(ping::PingPlugin);
         this.register(connectivity_report::ConnectivityReportPlugin);
         this.register(clipboard::ClipboardPlugin::new());
-        this.register(mpris::MprisPlugin::new());
-        this.register(receive_notifications::ReceiveNotificationsPlugin::new());
+        utils::log_if_error(
+            "Failed to initialize MPRIS plugin",
+            mpris::MprisPlugin::new(dev.clone(), ctx.clone())
+                .await
+                .map(|p| this.register(p)),
+        );
+        this.register(receive_notifications::ReceiveNotificationsPlugin::new(
+            dev.clone(),
+            ctx.clone(),
+        ));
         this.register(receive_mouse::ReceiveMousePlugin);
         this.register(battery::BatteryPlugin);
 
+        // Start the plugins
+        let plugins = this
+            .plugins
+            .iter()
+            .map(|(_, p)| Arc::clone(p))
+            .collect::<Vec<_>>();
+        tokio::spawn(async move {
+            for plugin in plugins {
+                if let Err(e) = plugin.clone().start().await {
+                    log::error!("Failed to start plugin {:?}: {:?}", plugin, e);
+                }
+            }
+        });
+
         this
-    }
-
-    pub async fn start(&self, ctx: AppContextRef) -> Result<()> {
-        for (_, plugin) in &self.plugins {
-            let ctx = ctx.clone();
-            let plugin = plugin.clone();
-
-            plugin.start(ctx).await?;
-        }
-        Ok(())
     }
 
     pub fn register<P>(&mut self, plugin: P)
@@ -89,9 +126,8 @@ impl PluginRepository {
             .push((in_caps.into_iter().collect(), Arc::new(plugin)));
     }
 
-    pub async fn handle_packet(&self, device_id: String, packet: NetworkPacket) -> Result<()> {
-        let packet = IncomingPacket { device_id, inner: packet };
-        let typ = packet.inner.typ.as_str();
+    pub async fn handle_packet(&self, packet: NetworkPacket) -> Result<()> {
+        let typ = packet.typ.as_str();
 
         log::debug!("Incoming packet: {:?}", packet);
 
@@ -107,7 +143,7 @@ impl PluginRepository {
 
     pub async fn handle_event(&self, event: KdeConnectEvent) {
         for (_, plugin) in &self.plugins {
-            if let Err(e) = plugin.handle_event(event.clone()).await {
+            if let Err(e) = plugin.clone().handle_event(event.clone()).await {
                 log::error!("Error handling event: {}", e);
             }
         }

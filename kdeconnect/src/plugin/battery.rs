@@ -1,7 +1,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use super::{IncomingPacket, KdeConnectPlugin, KdeConnectPluginMetadata};
+use crate::packet::NetworkPacket;
+
+use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,10 +20,10 @@ pub struct BatteryPlugin;
 
 #[async_trait::async_trait]
 impl KdeConnectPlugin for BatteryPlugin {
-    async fn handle(&self, packet: IncomingPacket) -> Result<()> {
-        match packet.inner.typ.as_str() {
+    async fn handle(&self, packet: NetworkPacket) -> Result<()> {
+        match packet.typ.as_str() {
             "kdeconnect.battery" => {
-                let report: BatteryReport = packet.inner.into_body()?;
+                let report: BatteryReport = packet.into_body()?;
                 log::info!("Battery report: {:?}", report);
             }
             "kdeconnect.battery.request" => {

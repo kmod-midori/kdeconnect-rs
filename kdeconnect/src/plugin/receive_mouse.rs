@@ -1,7 +1,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use super::{IncomingPacket, KdeConnectPlugin, KdeConnectPluginMetadata};
+use crate::packet::NetworkPacket;
+
+use super::{ KdeConnectPlugin, KdeConnectPluginMetadata};
 
 use windows::Win32::UI::Input::KeyboardAndMouse;
 
@@ -53,10 +55,10 @@ impl ReceiveMousePlugin {}
 
 #[async_trait::async_trait]
 impl KdeConnectPlugin for ReceiveMousePlugin {
-    async fn handle(&self, packet: IncomingPacket) -> Result<()> {
-        match packet.inner.typ.as_str() {
+    async fn handle(&self, packet: NetworkPacket) -> Result<()> {
+        match packet.typ.as_str() {
             PACKET_TYPE_MOUSEPAD_REQUEST => {
-                let request: MousePadRequestPacket = packet.inner.into_body()?;
+                let request: MousePadRequestPacket = packet.into_body()?;
 
                 let mut inputs = vec![];
 

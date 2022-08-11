@@ -26,14 +26,15 @@ use windows::Win32::{
     UI::WindowsAndMessaging::{DispatchMessageA, GetMessageA, TranslateMessage},
 };
 
+mod cache;
 mod config;
 mod context;
 mod device;
 mod event;
+mod platform_listener;
 mod plugin;
 mod tls;
 mod utils;
-mod window;
 
 async fn udp_server(tcp_port: u16, ctx: AppContextRef) -> Result<()> {
     let socket = Socket::new(
@@ -52,8 +53,8 @@ async fn udp_server(tcp_port: u16, ctx: AppContextRef) -> Result<()> {
 
     let mut identity_packet = NetworkPacket::new_identity(
         tcp_port,
-        ctx.plugin_repo.incoming_caps.clone(),
-        ctx.plugin_repo.outgoing_caps.clone(),
+        plugin::ALL_CAPS.0.clone(),
+        plugin::ALL_CAPS.1.clone(),
         &ctx.config,
     );
 
@@ -220,10 +221,10 @@ async fn handle_conn(
         addr
     );
 
-    let (conn_id, mut packet_rx) = ctx
+    let (conn_id, mut packet_rx, device_handle) = ctx
         .device_manager
         .add_device(device_id, &remote_identity.device_name, addr)
-        .await;
+        .await?;
 
     loop {
         let mut line = String::new();
@@ -268,18 +269,7 @@ async fn handle_conn(
                             log::info!("Accepted pairing request");
                         }
                         _ => {
-                            // Handle with plugins
-                            let ctx = ctx.clone();
-                            let device_id = device_id.to_string();
-
-                            tokio::spawn(async move {
-                                match ctx.plugin_repo.handle_packet(device_id,packet).await {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        log::error!("Failed to handle packet: {:?}", e);
-                                    }
-                                }
-                            });
+                            device_handle.dispatch_packet(packet).await;
                         },
                     },
                     Err(err) => {
@@ -329,14 +319,12 @@ async fn tcp_server(listener: TcpListener, ctx: AppContextRef) -> Result<()> {
 async fn event_handler(mut rx: event::EventReceiver, ctx: AppContextRef) {
     while let Some(message) = rx.recv().await {
         let ctx = ctx.clone();
-        tokio::spawn(async move {
-            ctx.plugin_repo.handle_event(message).await;
-        });
+        ctx.device_manager.broadcast_event(message).await;
     }
 }
 
 #[tokio::main]
-async fn server_main(event_tx: event::EventSender, event_rx: event::EventReceiver) -> Result<()> {
+async fn server_main(_event_tx: event::EventSender, event_rx: event::EventReceiver) -> Result<()> {
     let (tcp_listener, tcp_port) = open_tcp_server().await?;
 
     log::info!("TCP port: {}", tcp_port);
@@ -401,7 +389,8 @@ fn main() -> Result<()> {
 
     let (event_tx, event_rx) = mpsc::channel(10);
 
-    window::MyWindow::create(event_tx.clone())?;
+    platform_listener::MyWindow::create(event_tx.clone())?;
+    platform_listener::mpris::start(event_tx.clone())?;
 
     std::thread::spawn(|| {
         let r = server_main(event_tx, event_rx);

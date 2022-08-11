@@ -6,24 +6,27 @@ use tokio::sync::Mutex;
 
 type Cache = LruCache<String, Arc<Vec<u8>>>;
 
-pub struct AlbumArtCache {
+lazy_static::lazy_static! {
+    pub static ref PAYLOAD_CACHE: PayloadCache = {
+        PayloadCache::new().expect("Failed to initialize album art cache")
+    };
+}
+
+pub struct PayloadCache {
     cache: Mutex<Cache>,
     cache_path: PathBuf,
 }
 
-impl AlbumArtCache {
-    pub fn new() -> Self {
-        Self {
+impl PayloadCache {
+    pub fn new() -> Result<Self> {
+        let cache_path = std::env::temp_dir().join("kdeconnect-rs");
+        if !cache_path.exists() {
+            std::fs::create_dir_all(&cache_path)?;
+        }
+        Ok(Self {
             cache: Mutex::new(LruCache::new(10)),
-            cache_path: std::env::temp_dir().join("kdeconnect-rs-mpris"),
-        }
-    }
-
-    pub async fn start(&self) -> Result<()> {
-        if !self.cache_path.exists() {
-            tokio::fs::create_dir_all(&self.cache_path).await?;
-        }
-        Ok(())
+            cache_path,
+        })
     }
 
     async fn get_internal(&self, cache: &mut Cache, name: &str) -> Result<Option<Arc<Vec<u8>>>> {
@@ -50,6 +53,18 @@ impl AlbumArtCache {
         self.get_internal(&mut cache, name).await
     }
 
+    pub async fn get_path(&self, name: &str) -> Result<Option<PathBuf>> {
+        let path = self.cache_path.join(name);
+
+        match tokio::fs::metadata(&path).await {
+            Ok(_) => Ok(Some(path)),
+            Err(e) => match e.kind() {
+                std::io::ErrorKind::NotFound => Ok(None),
+                _ => Err(e.into()),
+            },
+        }
+    }
+
     pub async fn put(&self, name: &str, data: Vec<u8>) -> Result<()> {
         let mut cache = self.cache.lock().await;
 
@@ -67,7 +82,7 @@ impl AlbumArtCache {
     }
 }
 
-impl Debug for AlbumArtCache {
+impl Debug for PayloadCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AlbumArtCache")
             .field("cache_path", &self.cache_path)

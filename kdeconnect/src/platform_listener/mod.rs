@@ -13,6 +13,8 @@ use windows::{
 
 use crate::event::{EventSender, KdeConnectEvent};
 
+pub mod mpris;
+
 pub struct MyWindow {
     hwnd: HWND,
     event_tx: EventSender,

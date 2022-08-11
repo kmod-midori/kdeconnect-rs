@@ -1,11 +1,11 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use anyhow::Result;
 
-use crate::{event::KdeConnectEvent, utils};
+use crate::{event::KdeConnectEvent, utils, packet::NetworkPacket};
 use clipboard_win::{formats, Clipboard, Getter};
 
-use super::{IncomingPacket, KdeConnectPlugin, KdeConnectPluginMetadata};
+use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
 #[derive(Debug)]
 pub struct ClipboardPlugin {}
@@ -49,7 +49,7 @@ impl ClipboardPlugin {
         })
         .await??;
 
-        dbg!(content);
+        // dbg!(content);
 
         Ok(())
     }
@@ -57,15 +57,15 @@ impl ClipboardPlugin {
 
 #[async_trait::async_trait]
 impl KdeConnectPlugin for ClipboardPlugin {
-    async fn handle(&self, packet: IncomingPacket) -> Result<()> {
+    async fn handle(&self, packet: NetworkPacket) -> Result<()> {
         dbg!(packet);
         Ok(())
     }
 
-    async fn handle_event(&self, event: KdeConnectEvent) -> Result<()> {
+    async fn handle_event(self: Arc<Self>, event: KdeConnectEvent) -> Result<()> {
         match event {
             KdeConnectEvent::ClipboardUpdated => {
-                log::info!("Clipboard updated");
+                // log::info!("Clipboard updated");
                 if let Err(e) = self.read_clipboard().await {
                     log::error!("Error reading clipboard: {}", e);
                 }
