@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
+use lru_cache::LruCache;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 use windows::{
     core::{Interface, HSTRING},
     Data::Xml::Dom::XmlDocument,
@@ -56,6 +58,7 @@ lazy_static::lazy_static! {
 pub struct ReceiveNotificationsPlugin {
     device: DeviceHandle,
     group_hash: HSTRING,
+    id_to_icon_hash: Mutex<LruCache<String, String>>,
 }
 
 impl ReceiveNotificationsPlugin {
@@ -66,6 +69,7 @@ impl ReceiveNotificationsPlugin {
                 md5::compute(&format!("receive_notifications:{}", dev.device_id()))
             )),
             device: dev,
+            id_to_icon_hash: Mutex::new(LruCache::new(100)),
         }
     }
 
@@ -84,26 +88,40 @@ impl ReceiveNotificationsPlugin {
                 return Ok(());
             };
 
-        let icon_url = if let Some(h) = notification.payload_hash {
-            let name = format!("{}.png", h);
+        let icon_url = {
+            let mut id_to_icon_hash = self.id_to_icon_hash.lock().await;
 
-            if let Some(path) = PAYLOAD_CACHE.get_path(&name).await? {
-                Some(url::Url::from_file_path(path).unwrap().to_string())
-            } else {
-                if let Some(payload_info) = payload_info {
+            if let Some(icon_hash) = id_to_icon_hash.get_mut(&notification.id) {
+                Some(icon_hash.clone())
+            } else if let Some(h) = notification.payload_hash {
+                drop(id_to_icon_hash);
+                let name = format!("{}.png", h);
+
+                let icon_url = if let Some(path) = PAYLOAD_CACHE.get_path(&name).await? {
+                    Some(url::Url::from_file_path(path).unwrap().to_string())
+                } else if let Some(payload_info) = payload_info {
                     let data = self
                         .device
                         .fetch_payload(payload_info.port, payload_info.size as usize)
                         .await?;
+
                     PAYLOAD_CACHE.put(&name, data).await?;
                     let path = PAYLOAD_CACHE.get_path(&name).await?.unwrap();
+
                     Some(url::Url::from_file_path(path).unwrap().to_string())
                 } else {
                     None
+                };
+
+                if let Some(ref icon_url) = icon_url {
+                    let mut id_to_icon_hash = self.id_to_icon_hash.lock().await;
+                    id_to_icon_hash.insert(notification.id.clone(), icon_url.clone());
                 }
+
+                icon_url
+            } else {
+                None
             }
-        } else {
-            None
         };
 
         tokio::task::spawn_blocking(move || {
