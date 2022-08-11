@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
 use lru_cache::LruCache;
 use serde::{Deserialize, Serialize};
@@ -18,6 +20,8 @@ use crate::{
 };
 
 use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
+
+const PACKET_TYPE_NOTIFICATION_REQUEST: &str = "kdeconnect.notification.request";
 
 /// Convert a string to a HSTRING
 fn hs(s: impl AsRef<str>) -> HSTRING {
@@ -80,10 +84,11 @@ impl ReceiveNotificationsPlugin {
     ) -> Result<()> {
         let group_hash = self.group_hash.clone();
         let id_hash = hs(format!("{:x}", md5::compute(&notification.id)));
+        let app_name_hash = format!("{:x}", md5::compute(&notification.app_name));
 
         let (title, text) =
             if let (Some(title), Some(text)) = (notification.title, notification.text) {
-                (format!("{}: {}", notification.app_name, title), text)
+                (title, text)
             } else {
                 return Ok(());
             };
@@ -124,40 +129,71 @@ impl ReceiveNotificationsPlugin {
             }
         };
 
+        let dev = self.device.clone();
+        let rt_handle = tokio::runtime::Handle::current();
         tokio::task::spawn_blocking(move || {
             let toast_doc = XmlDocument::new()?;
 
             let toast_el = toast_doc.CreateElement(&hs("toast"))?;
             toast_doc.AppendChild(&toast_el)?;
-            let visual_el = toast_doc.CreateElement(&hs("visual"))?;
-            toast_el.AppendChild(&visual_el)?;
-
-            let binding_el = toast_doc.CreateElement(&hs("binding"))?;
-            visual_el.AppendChild(&binding_el)?;
-            binding_el.SetAttribute(&hs("template"), &hs("ToastGeneric"))?;
-            // Title
-            let text_el = toast_doc.CreateElement(&hs("text"))?;
-            binding_el.AppendChild(&text_el)?;
-            text_el.SetInnerText(&hs(title))?;
-            text_el.SetAttribute(&hs("id"), &hs("1"))?;
-            // Text
-            let text2_el = toast_doc.CreateElement(&hs("text"))?;
-            binding_el.AppendChild(&text2_el)?;
-            text2_el.SetInnerText(&hs(text))?;
-            text2_el.SetAttribute(&hs("id"), &hs("2"))?;
-            if let Some(url) = icon_url {
-                let image_el = toast_doc.CreateElement(&hs("image"))?;
-                binding_el.AppendChild(&image_el)?;
-                image_el.SetAttribute(&hs("placement"), &hs("appLogoOverride"))?;
-                image_el.SetAttribute(&hs("src"), &hs(url))?;
+            {
+                let header_el = toast_doc.CreateElement(&hs("header"))?;
+                toast_el.AppendChild(&header_el)?;
+                header_el.SetAttribute(&hs("id"), &hs(&app_name_hash))?;
+                header_el.SetAttribute(&hs("title"), &hs(&notification.app_name))?;
+                header_el.SetAttribute(&hs("arguments"), &hs("action=headerClick"))?;
             }
-
-            let actions_el = toast_doc.CreateElement(&hs("actions"))?;
-            toast_el.AppendChild(&actions_el)?;
-            let action_el = toast_doc.CreateElement(&hs("action"))?;
-            actions_el.AppendChild(&action_el)?;
-            action_el.SetAttribute(&hs("content"), &hs("Cancel"))?;
-            action_el.SetAttribute(&hs("arguments"), &hs("cancel"))?;
+            {
+                let visual_el = toast_doc.CreateElement(&hs("visual"))?;
+                toast_el.AppendChild(&visual_el)?;
+                {
+                    let binding_el = toast_doc.CreateElement(&hs("binding"))?;
+                    visual_el.AppendChild(&binding_el)?;
+                    binding_el.SetAttribute(&hs("template"), &hs("ToastGeneric"))?;
+                    {
+                        // Title
+                        {
+                            let text_el = toast_doc.CreateElement(&hs("text"))?;
+                            binding_el.AppendChild(&text_el)?;
+                            text_el.SetInnerText(&hs(title))?;
+                            text_el.SetAttribute(&hs("id"), &hs("1"))?;
+                        }
+                        // Text
+                        {
+                            let text2_el = toast_doc.CreateElement(&hs("text"))?;
+                            binding_el.AppendChild(&text2_el)?;
+                            text2_el.SetInnerText(&hs(text))?;
+                            text2_el.SetAttribute(&hs("id"), &hs("2"))?;
+                        }
+                        // Icon
+                        if let Some(url) = icon_url {
+                            let image_el = toast_doc.CreateElement(&hs("image"))?;
+                            binding_el.AppendChild(&image_el)?;
+                            image_el.SetAttribute(&hs("placement"), &hs("appLogoOverride"))?;
+                            image_el.SetAttribute(&hs("src"), &hs(url))?;
+                        }
+                        // // Attribution (App Name), not used for now because we can use headers
+                        // {
+                        //     let text_attrib_el = toast_doc.CreateElement(&hs("text"))?;
+                        //     binding_el.AppendChild(&text_attrib_el)?;
+                        //     text_attrib_el.SetInnerText(&hs(notification.app_name))?;
+                        //     text_attrib_el.SetAttribute(&hs("placement"), &hs("attribution"))?;
+                        // }
+                    }
+                }
+            }
+            {
+                let actions_el = toast_doc.CreateElement(&hs("actions"))?;
+                toast_el.AppendChild(&actions_el)?;
+                {
+                    let action_el = toast_doc.CreateElement(&hs("action"))?;
+                    actions_el.AppendChild(&action_el)?;
+                    action_el.SetAttribute(&hs("placement"), &hs("contextMenu"))?;
+                    action_el
+                        .SetAttribute(&hs("content"), &hs("Mute notifications from this app"))?;
+                    action_el.SetAttribute(&hs("arguments"), &hs("action=muteApp"))?;
+                }
+            }
 
             let toast = ToastNotification::CreateToastNotification(&toast_doc)?;
             toast.Failed(&TypedEventHandler::new(
@@ -181,7 +217,21 @@ impl ReceiveNotificationsPlugin {
 
                     match args.Reason() {
                         Ok(ToastDismissalReason::UserCanceled) => {
-                            log::info!("Notification {} cancelled by user", id);
+                            // Dismiss the remote notification
+                            let dev = dev.clone();
+                            let id = id.clone();
+
+                            let task = async move {
+                                dev.send_packet(NetworkPacket::new(
+                                    PACKET_TYPE_NOTIFICATION_REQUEST,
+                                    serde_json::json!({
+                                        "cancel": id,
+                                    }),
+                                ))
+                                .await;
+                            };
+
+                            rt_handle.spawn(task);
                         }
                         Ok(_) => {}
                         Err(e) => {
@@ -267,6 +317,22 @@ impl KdeConnectPlugin for ReceiveNotificationsPlugin {
 
         Ok(())
     }
+
+    async fn start(self: Arc<Self>) -> Result<()> {
+        // Request all remote notifications
+        let dev = self.device.clone();
+
+        tokio::spawn(async move {
+            dev.send_packet(NetworkPacket::new(
+                PACKET_TYPE_NOTIFICATION_REQUEST,
+                serde_json::json!({
+                    "request": true,
+                }),
+            )).await;
+        });
+
+        Ok(())
+    }
 }
 
 impl KdeConnectPluginMetadata for ReceiveNotificationsPlugin {
@@ -275,7 +341,7 @@ impl KdeConnectPluginMetadata for ReceiveNotificationsPlugin {
     }
     fn outgoing_capabilities() -> Vec<String> {
         vec![
-            "kdeconnect.notification.request".into(),
+            PACKET_TYPE_NOTIFICATION_REQUEST.into(),
             "kdeconnect.notification.reply".into(),
         ]
     }

@@ -1,35 +1,55 @@
 use std::{collections::HashSet, sync::Arc};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
-use crate::{event::KdeConnectEvent, utils, packet::NetworkPacket};
-use clipboard_win::{formats, Clipboard, Getter};
+use crate::{device::DeviceHandle, event::KdeConnectEvent, packet::NetworkPacket, utils};
+use clipboard_win::{formats, Clipboard, Getter, Setter};
 
 use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
+const PACKET_TYPE_CLIPBOARD: &str = "kdeconnect.clipboard";
+const PACKET_TYPE_CLIPBOARD_CONNECT: &str = "kdeconnect.clipboard.connect";
+
+fn try_open_clipboard() -> Result<Clipboard> {
+    let mut clipboard = None;
+    for _ in 0..10 {
+        if let Ok(c) = Clipboard::new() {
+            clipboard = Some(c);
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    if let Some(c) = clipboard {
+        Ok(c)
+    } else {
+        Err(anyhow::anyhow!("Could not open clipboard"))
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct ClipboardPacket {
+    content: String,
+}
+
 #[derive(Debug)]
-pub struct ClipboardPlugin {}
+pub struct ClipboardPlugin {
+    content: Mutex<Option<ClipboardContent>>,
+    device: DeviceHandle,
+}
 
 impl ClipboardPlugin {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(dev: DeviceHandle) -> Self {
+        Self {
+            content: Mutex::new(None),
+            device: dev,
+        }
     }
 
     async fn read_clipboard(&self) -> Result<()> {
         let content = tokio::task::spawn_blocking(|| {
-            let mut clipboard = None;
-            for _ in 0..10 {
-                if let Ok(c) = Clipboard::new() {
-                    clipboard = Some(c);
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            let _clip = if let Some(c) = clipboard {
-                c
-            } else {
-                return Err(anyhow::anyhow!("Could not open clipboard"));
-            };
+            let _clip = try_open_clipboard()?;
 
             let formats = clipboard_win::EnumFormats::new().collect::<HashSet<_>>();
 
@@ -49,26 +69,68 @@ impl ClipboardPlugin {
         })
         .await??;
 
-        // dbg!(content);
+        let mut c = self.content.lock().await;
+        *c = Some(content);
 
         Ok(())
+    }
+
+    async fn write_clipboard(&self, text: impl Into<String>) -> Result<()> {
+        let text = text.into();
+
+        tokio::task::spawn_blocking(move || {
+            let _clip = try_open_clipboard()?;
+
+            formats::Unicode.write_clipboard(&text)?;
+
+            Ok::<_, anyhow::Error>(())
+        })
+        .await??;
+
+        Ok(())
+    }
+
+    async fn send_clipboard(&self) {
+        let content = self.content.lock().await;
+        if let Some(content) = content.as_ref() {
+            match &content.content {
+                ClipboardContentType::Text(s) => {
+                    let packet = NetworkPacket::new(
+                        PACKET_TYPE_CLIPBOARD,
+                        ClipboardPacket {
+                            content: s.clone(),
+                        },
+                    );
+                    self.device.send_packet(packet).await;
+                }
+                ClipboardContentType::Files(_) => {}
+                ClipboardContentType::Unsupported => {}
+            }
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl KdeConnectPlugin for ClipboardPlugin {
     async fn handle(&self, packet: NetworkPacket) -> Result<()> {
-        dbg!(packet);
+        match packet.typ.as_str() {
+            PACKET_TYPE_CLIPBOARD => {
+                let body: ClipboardPacket = packet.into_body()?;
+                self.write_clipboard(body.content)
+                    .await
+                    .context("Write clipboard")?;
+            }
+            PACKET_TYPE_CLIPBOARD_CONNECT => {}
+            _ => {}
+        }
         Ok(())
     }
 
     async fn handle_event(self: Arc<Self>, event: KdeConnectEvent) -> Result<()> {
         match event {
             KdeConnectEvent::ClipboardUpdated => {
-                // log::info!("Clipboard updated");
-                if let Err(e) = self.read_clipboard().await {
-                    log::error!("Error reading clipboard: {}", e);
-                }
+                self.read_clipboard().await.context("Read clipboard")?;
+                // self.send_clipboard().await;
             }
             _ => {}
         }
@@ -79,14 +141,14 @@ impl KdeConnectPlugin for ClipboardPlugin {
 impl KdeConnectPluginMetadata for ClipboardPlugin {
     fn incoming_capabilities() -> Vec<String> {
         vec![
-            "kdeconnect.clipboard".into(),
-            "kdeconnect.clipboard.connect".into(),
+            PACKET_TYPE_CLIPBOARD.into(),
+            PACKET_TYPE_CLIPBOARD_CONNECT.into(),
         ]
     }
     fn outgoing_capabilities() -> Vec<String> {
         vec![
-            "kdeconnect.clipboard".into(),
-            "kdeconnect.clipboard.connect".into(),
+            PACKET_TYPE_CLIPBOARD.into(),
+            PACKET_TYPE_CLIPBOARD_CONNECT.into(),
         ]
     }
 }

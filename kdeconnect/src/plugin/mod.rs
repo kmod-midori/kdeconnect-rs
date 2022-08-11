@@ -74,7 +74,7 @@ impl PluginRepository {
 
         this.register(ping::PingPlugin);
         this.register(connectivity_report::ConnectivityReportPlugin);
-        this.register(clipboard::ClipboardPlugin::new());
+        this.register(clipboard::ClipboardPlugin::new(dev.clone()));
         utils::log_if_error(
             "Failed to initialize MPRIS plugin",
             mpris::MprisPlugin::new(dev.clone(), ctx.clone())

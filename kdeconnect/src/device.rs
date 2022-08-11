@@ -51,6 +51,11 @@ impl DeviceHandle {
             .await;
     }
 
+    pub fn blocking_send_packet(&self, packet: impl Into<NetworkPacketWithPayload>) {
+        self.manager_handle
+            .blocking_send_packet(self.device_id(), packet);
+    }
+
     /// Dispatch received packet from the device to plugins
     pub async fn dispatch_packet(&self, packet: impl Into<NetworkPacket>) {
         self.manager_handle
@@ -130,6 +135,12 @@ impl DeviceManagerHandle {
         self.sender.send(msg).await.expect("Failed to send message");
     }
 
+    fn blocking_send_message(&self, msg: Message) {
+        self.sender
+            .blocking_send(msg)
+            .expect("Failed to send message");
+    }
+
     pub fn active_device_count(&self) -> usize {
         self.active_device_count
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -148,6 +159,20 @@ impl DeviceManagerHandle {
             packet,
         };
         self.send_message(msg).await;
+    }
+
+    pub fn blocking_send_packet(
+        &self,
+        device_id: &str,
+        packet: impl Into<NetworkPacketWithPayload>,
+    ) {
+        let packet: NetworkPacketWithPayload = packet.into();
+
+        let msg = Message::SendPacket {
+            device_id: Some(device_id.into()),
+            packet,
+        };
+        self.blocking_send_message(msg);
     }
 }
 
