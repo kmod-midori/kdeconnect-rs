@@ -293,14 +293,14 @@ impl MprisPlugin {
             }))
             .context("Subscribe to MediaPropertiesChanged")?;
 
-        let this = self.clone();
+
         let sid = id.clone();
         let playback_info_token = session
             .PlaybackInfoChanged(&TypedEventHandler::new(move |_, _| {
                 log::debug!("PlaybackInfoChanged: {}", sid);
 
-                let this = this.clone();
-                let sid = sid.clone();
+                let this = self.clone();
+                let sid = id.clone();
 
                 this.rt_handle.clone().spawn(async move {
                     this.update_metadata_with_retry(&sid).await;

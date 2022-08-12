@@ -1,3 +1,5 @@
+#![allow(clippy::single_match, dead_code)]
+
 use std::{
     mem::MaybeUninit,
     net::{Ipv4Addr, SocketAddr},
@@ -83,7 +85,7 @@ async fn open_tcp_server() -> Result<(TcpListener, u16)> {
         }
     }
 
-    return Err(last_error.unwrap().into());
+    Err(last_error.unwrap().into())
 }
 
 async fn open_payload_tcp_server() -> Result<(TcpListener, u16)> {
@@ -99,7 +101,7 @@ async fn open_payload_tcp_server() -> Result<(TcpListener, u16)> {
         }
     }
 
-    return Err(last_error.unwrap().into());
+    Err(last_error.unwrap().into())
 }
 
 async fn serve_payload(server: TcpListener, data: Arc<Vec<u8>>, ctx: AppContextRef) {
@@ -133,7 +135,6 @@ async fn serve_payload(server: TcpListener, data: Arc<Vec<u8>>, ctx: AppContextR
 
                 if let Err(e) = stream.flush().await {
                     log::error!("Error flushing payload to {}: {:?}", addr, e);
-                    return;
                 }
             });
         }

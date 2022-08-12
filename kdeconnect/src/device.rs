@@ -313,7 +313,7 @@ impl DeviceManagerActor {
                 }
             }
             Message::Event(event) => {
-                for (_, device) in &self.devices {
+                for device in self.devices.values() {
                     let pr = device.plugin_repo.clone();
                     let event = event.clone();
 

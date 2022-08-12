@@ -108,7 +108,7 @@ impl NetworkPacket {
         mut conn: W,
     ) -> Result<(), std::io::Error> {
         conn.write_all(&self.to_vec()).await?;
-        conn.write(b"\n").await?;
+        conn.write_all(b"\n").await?;
         conn.flush().await?;
         Ok(())
     }
@@ -117,7 +117,7 @@ impl NetworkPacket {
     where
         B: DeserializeOwned,
     {
-        Ok(serde_json::from_value(self.body)?)
+        serde_json::from_value(self.body)
     }
 
     pub fn set_payload(&mut self, size: u64, port: u16) {
@@ -143,7 +143,7 @@ impl Debug for NetworkPacketWithPayload {
             Some(p) => format!("Some({} bytes)", p.len()),
             None => "None".to_string(),
         };
-        
+
         f.debug_struct("NetworkPacketWithPayload")
             .field("packet", &self.packet)
             .field("payload", &payload_desc)

@@ -110,7 +110,7 @@ impl KdeConnectPlugin for InputReceivePlugin {
                             },
                         },
                     };
-                    let mut up = down.clone();
+                    let mut up = down;
                     up.Anonymous.mi.dwFlags = mouse_click_up;
                     inputs.push(down);
                     inputs.push(up);
@@ -127,11 +127,11 @@ impl KdeConnectPlugin for InputReceivePlugin {
                         },
                     };
                     
-                    let mut up = down.clone();
+                    let mut up = down;
                     up.Anonymous.mi.dwFlags = KeyboardAndMouse::MOUSEEVENTF_LEFTUP;
 
-                    inputs.push(down.clone());
-                    inputs.push(up.clone());
+                    inputs.push(down);
+                    inputs.push(up);
                     inputs.push(down);
                     inputs.push(up);
                 }

@@ -36,14 +36,14 @@ impl Config {
         } else {
             let r = Self::init()?;
             r.save(path)?;
-            return Ok(r);
+            Ok(r)
         }
     }
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let f = BufReader::new(File::open(path)?);
         let config: EncodedConfig = serde_json::from_reader(f)?;
-        Ok(Self::try_from(config)?)
+        Self::try_from(config)
     }
 
     /// Initialize new UUID and certificates.

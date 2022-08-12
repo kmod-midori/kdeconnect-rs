@@ -27,6 +27,24 @@ pub struct Header {
 }
 
 impl Header {
+    pub fn new(
+        id: impl Into<String>,
+        title: impl Into<String>,
+        arguments: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            title: title.into(),
+            arguments: arguments.into(),
+            activation_type: None,
+        }
+    }
+
+    pub fn with_activation_type(mut self, activation_type: ActivationType) -> Self {
+        self.activation_type = Some(activation_type);
+        self
+    }
+
     pub(crate) fn write_to_element(&self, el: &XmlElement) -> crate::Result<()> {
         el.SetAttribute(&hs("id"), &hs(&self.id))?;
         el.SetAttribute(&hs("title"), &hs(&self.title))?;
@@ -34,7 +52,7 @@ impl Header {
         if let Some(activation_type) = self.activation_type {
             el.SetAttribute(&hs("activationType"), &hs(activation_type.as_str()))?;
         }
-        
+
         Ok(())
     }
 }

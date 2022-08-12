@@ -36,7 +36,7 @@ impl Text {
 
     pub(crate) fn write_to_element(&self, id: u8, el: &XmlElement) -> crate::Result<()> {
         el.SetAttribute(&hs("id"), &hs(&format!("{}", id)))?;
-        el.SetInnerText(&hs(self.content.to_string()))?;
+        el.SetInnerText(&hs(&self.content))?;
         if let Some(placement) = self.placement {
             el.SetAttribute(&hs("placement"), &hs(placement.as_str()))?;
         }
