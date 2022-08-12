@@ -59,13 +59,13 @@ lazy_static::lazy_static! {
 }
 
 #[derive(Debug)]
-pub struct ReceiveNotificationsPlugin {
+pub struct NotificationReceivePlugin {
     device: DeviceHandle,
     group_hash: HSTRING,
     id_to_icon_hash: Mutex<LruCache<String, String>>,
 }
 
-impl ReceiveNotificationsPlugin {
+impl NotificationReceivePlugin {
     pub fn new(dev: DeviceHandle, _ctx: AppContextRef) -> Self {
         Self {
             group_hash: hs(format!(
@@ -285,8 +285,9 @@ struct PayloadInfo {
 }
 
 #[async_trait::async_trait]
-impl KdeConnectPlugin for ReceiveNotificationsPlugin {
+impl KdeConnectPlugin for NotificationReceivePlugin {
     async fn handle(&self, packet: NetworkPacket) -> Result<()> {
+        // Extract payload
         let payload_info = if let (Some(size), Some(pi)) = (
             packet.payload_size.as_ref(),
             packet.payload_transfer_info.as_ref(),
@@ -298,17 +299,18 @@ impl KdeConnectPlugin for ReceiveNotificationsPlugin {
         } else {
             None
         };
+        
         let body: NotificationBody = packet.into_body()?;
-
-        log::info!("Notification: {:?}", body);
 
         match body {
             NotificationBody::Cancelled { id, .. } => {
+                log::info!("Cancelled {}", id);
                 self.remove_notification(&id)
                     .await
                     .context("Remove notification")?;
             }
             NotificationBody::Posted(notif) => {
+                log::info!("Posted {}", notif.id);
                 self.show_notification(notif, payload_info)
                     .await
                     .context("Show notification")?;
@@ -335,7 +337,7 @@ impl KdeConnectPlugin for ReceiveNotificationsPlugin {
     }
 }
 
-impl KdeConnectPluginMetadata for ReceiveNotificationsPlugin {
+impl KdeConnectPluginMetadata for NotificationReceivePlugin {
     fn incoming_capabilities() -> Vec<String> {
         vec!["kdeconnect.notification".into()]
     }

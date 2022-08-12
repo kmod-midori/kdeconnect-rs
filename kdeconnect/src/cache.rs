@@ -8,7 +8,7 @@ type Cache = LruCache<String, Arc<Vec<u8>>>;
 
 lazy_static::lazy_static! {
     pub static ref PAYLOAD_CACHE: PayloadCache = {
-        PayloadCache::new().expect("Failed to initialize album art cache")
+        PayloadCache::new().expect("Failed to initialize payload cache")
     };
 }
 

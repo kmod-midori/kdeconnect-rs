@@ -11,8 +11,8 @@ mod clipboard;
 mod connectivity_report;
 mod mpris;
 mod ping;
-mod receive_mouse;
-mod receive_notifications;
+mod input_receive;
+mod notification_receive;
 
 #[async_trait::async_trait]
 pub trait KdeConnectPlugin: std::fmt::Debug + Send + Sync {
@@ -49,11 +49,11 @@ lazy_static::lazy_static! {
         incoming_caps.extend(mpris::MprisPlugin::incoming_capabilities());
         outgoing_caps.extend(mpris::MprisPlugin::outgoing_capabilities());
         incoming_caps
-            .extend(receive_notifications::ReceiveNotificationsPlugin::incoming_capabilities());
+            .extend(notification_receive::NotificationReceivePlugin::incoming_capabilities());
         outgoing_caps
-            .extend(receive_notifications::ReceiveNotificationsPlugin::outgoing_capabilities());
-        incoming_caps.extend(receive_mouse::ReceiveMousePlugin::incoming_capabilities());
-        outgoing_caps.extend(receive_mouse::ReceiveMousePlugin::outgoing_capabilities());
+            .extend(notification_receive::NotificationReceivePlugin::outgoing_capabilities());
+        incoming_caps.extend(input_receive::InputReceivePlugin::incoming_capabilities());
+        outgoing_caps.extend(input_receive::InputReceivePlugin::outgoing_capabilities());
         incoming_caps.extend(battery::BatteryPlugin::incoming_capabilities());
         outgoing_caps.extend(battery::BatteryPlugin::outgoing_capabilities());
 
@@ -81,11 +81,11 @@ impl PluginRepository {
                 .await
                 .map(|p| this.register(p)),
         );
-        this.register(receive_notifications::ReceiveNotificationsPlugin::new(
+        this.register(notification_receive::NotificationReceivePlugin::new(
             dev.clone(),
             ctx.clone(),
         ));
-        this.register(receive_mouse::ReceiveMousePlugin);
+        this.register(input_receive::InputReceivePlugin);
         this.register(battery::BatteryPlugin);
 
         // Start the plugins

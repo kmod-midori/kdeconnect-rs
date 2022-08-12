@@ -1,0 +1,8 @@
+[devices.note11t]
+id = "eebb9af2ed9232d2"
+[devices.note11t.plugins.ping]
+[devices.note11t.plugins.clipboard]
+[devices.note11t.plugins.notification-receive]
+[devices.note11t.plugins.battery]
+[devices.note11t.plugins.mpris-send]
+[devices.note11t.plugins.input-receive]

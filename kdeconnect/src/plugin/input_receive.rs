@@ -10,7 +10,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse;
 const PACKET_TYPE_MOUSEPAD_REQUEST: &str = "kdeconnect.mousepad.request";
 
 #[derive(Debug)]
-pub struct ReceiveMousePlugin;
+pub struct InputReceivePlugin;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(untagged)]
@@ -51,10 +51,10 @@ struct MousePadRequestPacket {
     key: Option<String>,
 }
 
-impl ReceiveMousePlugin {}
+impl InputReceivePlugin {}
 
 #[async_trait::async_trait]
-impl KdeConnectPlugin for ReceiveMousePlugin {
+impl KdeConnectPlugin for InputReceivePlugin {
     async fn handle(&self, packet: NetworkPacket) -> Result<()> {
         match packet.typ.as_str() {
             PACKET_TYPE_MOUSEPAD_REQUEST => {
@@ -152,7 +152,7 @@ impl KdeConnectPlugin for ReceiveMousePlugin {
     }
 }
 
-impl KdeConnectPluginMetadata for ReceiveMousePlugin {
+impl KdeConnectPluginMetadata for InputReceivePlugin {
     fn incoming_capabilities() -> Vec<String> {
         vec![PACKET_TYPE_MOUSEPAD_REQUEST.into()]
     }
