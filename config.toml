@@ -2,7 +2,11 @@
 id = "eebb9af2ed9232d2"
 [devices.note11t.plugins.ping]
 [devices.note11t.plugins.clipboard]
+remote-to-local = "auto"
+local-to-remote = { hotkey = "ctrl+shift+c" }
 [devices.note11t.plugins.notification-receive]
+on-local-dismiss = "dismiss"
+on-remote-dismiss = "dismiss"
 [devices.note11t.plugins.battery]
 [devices.note11t.plugins.mpris-send]
 [devices.note11t.plugins.input-receive]

@@ -72,7 +72,7 @@ impl PluginRepository {
     pub async fn new(dev: DeviceHandle, ctx: AppContextRef) -> Self {
         let mut this = Self::default();
 
-        this.register(ping::PingPlugin);
+        this.register(ping::PingPlugin::new(dev.clone()));
         this.register(connectivity_report::ConnectivityReportPlugin);
         this.register(clipboard::ClipboardPlugin::new(dev.clone()));
         utils::log_if_error(

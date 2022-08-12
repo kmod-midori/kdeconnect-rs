@@ -167,9 +167,7 @@ impl NotificationReceivePlugin {
             log::error!("Failed to show notification {}: {:?}", id, e);
         });
 
-        let on_activated = Box::new(move |arg| {
-            dbg!(arg);
-        });
+        let on_activated = Box::new(move |_arg| {});
 
         tokio::task::spawn_blocking(move || {
             manager.show(
