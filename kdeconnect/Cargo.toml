@@ -43,7 +43,6 @@ winrt-toast = { path = "../winrt-toast" }
 [dependencies.windows]
 version = "0.39.0"
 features = [
-    "Data_Xml_Dom",
     "Win32_Foundation",
     "Win32_Security",
     "Win32_System_Threading",
@@ -60,6 +59,4 @@ features = [
     "Win32_System_SystemServices",
     "Win32_System_Memory",
     "Win32_System_SystemInformation",
-    "Globalization",
-    "UI_Notifications"
 ]
