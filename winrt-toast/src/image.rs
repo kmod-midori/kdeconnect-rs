@@ -26,6 +26,7 @@ impl ImagePlacement {
 /// The cropping of the image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageHintCrop {
+    /// The image is cropped into a circle.
     Circle,
 }
 
@@ -37,6 +38,7 @@ impl ImageHintCrop {
     }
 }
 
+/// Specifies an image used in the toast template.
 #[derive(Debug, Clone)]
 pub struct Image {
     src: url::Url,
@@ -76,6 +78,7 @@ impl Image {
         self
     }
 
+    /// A description of the image, for users of assistive technologies.
     pub fn with_alt(mut self, alt: impl Into<String>) -> Self {
         self.alt = Some(alt.into());
         self

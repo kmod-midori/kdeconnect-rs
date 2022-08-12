@@ -1,9 +1,16 @@
-pub mod text;
-use std::{collections::HashMap, time::Duration};
+//! Test
 
+#![warn(missing_docs)]
+use std::{collections::HashMap, time::Duration};
+/// Text elements
+pub mod text;
 pub use text::Text;
+
+/// Image elements
 pub mod image;
 pub use image::Image;
+
+/// Header elements
 pub mod header;
 pub use header::Header;
 
@@ -20,10 +27,18 @@ use windows::{
     },
 };
 
+/// Specifies the reason that a toast notification is no longer being shown
+///
+/// See <https://docs.microsoft.com/en-us/uwp/api/windows.ui.notifications.toastdismissalreason>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DismissalReason {
+    /// The user dismissed the toast notification.
     UserCanceled,
+    /// The app explicitly hid the toast notification by calling the ToastNotifier.hide method.
     ApplicationHidden,
+    /// The toast notification had been shown for the maximum allowed time and was faded out.
+    /// The maximum time to show a toast notification is 7 seconds except in the case of long-duration toasts,
+    /// in which case it is 25 seconds.
     TimedOut,
 }
 
@@ -38,6 +53,10 @@ impl DismissalReason {
     }
 }
 
+/// An interface that provides access to the toast notification manager.
+///
+/// This does not actually hold any Windows resource, but is used to
+/// store the application ID that is required to access the toast notification manager.
 #[derive(Clone)]
 pub struct ToastManager {
     app_id: HSTRING,
@@ -50,12 +69,14 @@ impl std::fmt::Debug for ToastManager {
 }
 
 impl ToastManager {
+    /// Create a new manager with 
     pub fn new(app_id: impl AsRef<str>) -> Self {
         Self {
             app_id: hs(app_id.as_ref()),
         }
     }
 
+    /// Remove all notifications in `group`.
     pub fn remove_group(&self, group: &str) -> Result<()> {
         let history = ToastNotificationManager::History()?;
 
@@ -64,6 +85,7 @@ impl ToastManager {
         Ok(())
     }
 
+    /// Remove a notification in `group` with `tag`.
     pub fn remove_grouped_tag(&self, group: &str, tag: &str) -> Result<()> {
         let history = ToastNotificationManager::History()?;
 
@@ -72,6 +94,7 @@ impl ToastManager {
         Ok(())
     }
 
+    /// Remove a notification with the specified `tag`.
     pub fn remove(&self, tag: &str) -> Result<()> {
         let history = ToastNotificationManager::History()?;
 
@@ -80,6 +103,7 @@ impl ToastManager {
         Ok(())
     }
 
+    /// Clear all toast notifications from this application.
     pub fn clear(&self) -> Result<()> {
         let history = ToastNotificationManager::History()?;
 
@@ -88,6 +112,7 @@ impl ToastManager {
         Ok(())
     }
 
+    /// Send a toast to Windows for display.
     pub fn show(
         &self,
         in_toast: &Toast,
@@ -219,9 +244,23 @@ impl ToastManager {
     }
 }
 
+/// Represents a Windows toast.
 ///
-///
-/// See https://docs.microsoft.com/en-us/uwp/api/windows.ui.notifications.toastnotification
+/// See <https://docs.microsoft.com/en-us/uwp/api/windows.ui.notifications.toastnotification>
+/// 
+/// # Example
+/// ```rust
+/// # use winrt_toast::{Toast, Text, Header};
+/// # use winrt_toast::text::TextPlacement;
+/// 
+/// let mut toast = Toast::new()
+///     .text1("Title")
+///     .text2(Text::new("Body"))
+///     .text3(
+///         Text::new("Via SMS")
+///             .with_placement(TextPlacement::Attribution)
+///     );
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct Toast {
     header: Option<Header>,
@@ -246,6 +285,20 @@ impl Toast {
     }
 
     /// The first text element, usually the title.
+    /// 
+    /// # Example
+    /// ```rust
+    /// # use winrt_toast::{Toast, Text};
+    /// # use winrt_toast::text::TextPlacement;
+    /// # let mut toast = Toast::new();
+    /// // You can use anything that is Into<String>
+    /// toast.text1("text");
+    /// 
+    /// // Or you can use a `Text`
+    /// toast.text1(
+    ///     Text::new("text").with_placement(TextPlacement::Attribution)
+    /// );
+    /// ```
     pub fn text1<T: Into<Text>>(&mut self, text: T) -> &mut Toast {
         self.text.0 = Some(text.into());
         self
@@ -265,7 +318,7 @@ impl Toast {
 
     /// Add an image with the corresponding ID to the toast.
     ///
-    /// ### ID
+    /// # ID
     /// The image element in the toast template that this image is intended for.
     /// If a template has only one image, then this value is 1.
     /// The number of available image positions is based on the template definition.
@@ -276,7 +329,7 @@ impl Toast {
 
     /// Set the tag of this toast.
     ///
-    /// See https://docs.microsoft.com/en-us/windows/apps/design/shell/tiles-and-notifications/send-local-toast-cpp-uwp?tabs=xml#provide-a-primary-key-for-your-toast
+    /// See <https://docs.microsoft.com/en-us/windows/apps/design/shell/tiles-and-notifications/send-local-toast-cpp-uwp?tabs=xml#provide-a-primary-key-for-your-toast>
     pub fn tag(&mut self, tag: impl Into<String>) -> &mut Toast {
         self.tag = Some(tag.into());
         self
@@ -284,7 +337,7 @@ impl Toast {
 
     /// Set the group of this toast.
     ///
-    /// See https://docs.microsoft.com/en-us/windows/apps/design/shell/tiles-and-notifications/send-local-toast-cpp-uwp?tabs=xml#provide-a-primary-key-for-your-toast
+    /// See <https://docs.microsoft.com/en-us/windows/apps/design/shell/tiles-and-notifications/send-local-toast-cpp-uwp?tabs=xml#provide-a-primary-key-for-your-toast>
     pub fn group(&mut self, group: impl Into<String>) -> &mut Toast {
         self.group = Some(group.into());
         self
@@ -312,15 +365,20 @@ pub(crate) fn hs(s: impl AsRef<str>) -> HSTRING {
     HSTRING::from(s)
 }
 
+/// The error type used in this crate.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum WinToastError {
+    /// External error from the Windows API.
     #[error("Windows API error: {0}")]
     Os(#[from] windows::core::Error),
+    /// The given path is not absolute, and therefore cannot be converted to an URL.
     #[error("The given path is not absolute")]
     InvalidPath,
+    /// The dismissal reason from OS is unknown
     #[error("The dismissal reason from OS is unknown")]
     InvalidDismissalReason,
 }
 
+/// The result type used in this crate.
 pub type Result<T> = std::result::Result<T, WinToastError>;

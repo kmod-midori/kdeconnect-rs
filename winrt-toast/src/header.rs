@@ -2,9 +2,12 @@ use windows::Data::Xml::Dom::XmlElement;
 
 use crate::hs;
 
+/// The type of activation this header will use when clicked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivationType {
+    /// The activation event is sent to a foreground app.
     Foreground,
+    /// The activation event is sent via a protocol.
     Protocol,
 }
 
@@ -17,7 +20,9 @@ impl ActivationType {
     }
 }
 
-/// See https://docs.microsoft.com/en-us/windows/apps/design/shell/tiles-and-notifications/toast-headers
+/// Specifies a custom header that groups multiple notifications together within Action Center.
+/// 
+/// See <https://docs.microsoft.com/en-us/windows/apps/design/shell/tiles-and-notifications/toast-headers>
 #[derive(Debug, Clone)]
 pub struct Header {
     id: String,
@@ -27,6 +32,7 @@ pub struct Header {
 }
 
 impl Header {
+    /// Create a new header element.
     pub fn new(
         id: impl Into<String>,
         title: impl Into<String>,
@@ -40,6 +46,7 @@ impl Header {
         }
     }
 
+    /// The type of activation this header will use when clicked.
     pub fn with_activation_type(mut self, activation_type: ActivationType) -> Self {
         self.activation_type = Some(activation_type);
         self
