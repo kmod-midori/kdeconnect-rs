@@ -1,15 +1,15 @@
 use windows::{
-    core::{IInspectable, HSTRING, Interface},
+    core::{IInspectable, Interface, HSTRING},
     Data::Xml::Dom::XmlDocument,
     Foundation::{PropertyValue, TypedEventHandler},
     Globalization::Calendar,
     UI::Notifications::{
-        ToastActivatedEventArgs, ToastDismissalReason, ToastFailedEventArgs,
-        ToastNotificationManager, ToastNotification, ToastDismissedEventArgs,
+        ToastActivatedEventArgs, ToastDismissalReason, ToastDismissedEventArgs,
+        ToastFailedEventArgs, ToastNotification, ToastNotificationManager,
     },
 };
 
-use crate::{hs, Result, WinToastError, Toast};
+use crate::{hs, Result, Toast, WinToastError};
 
 /// Specifies the reason that a toast notification is no longer being shown
 ///
@@ -41,10 +41,10 @@ impl DismissalReason {
 ///
 /// This does not actually hold any Windows resource, but is used to
 /// store the Application User Model ID (AUMID)  that is required to access the toast notification manager.
-/// 
+///
 /// You may register your own AUMID with this crate's `register` function, or
 /// use any method described in the [Windows documentation](https://docs.microsoft.com/en-us/windows/apps/design/shell/tiles-and-notifications/send-local-toast-desktop-cpp-wrl#step-5-register-with-notification-platform).
-/// 
+///
 /// Alternatively, you may use `{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe` as an experimental AUMID.
 #[derive(Clone)]
 pub struct ToastManager {
@@ -102,7 +102,7 @@ impl ToastManager {
     }
 
     /// Send a toast to Windows for display.
-    pub fn show(
+    pub fn show_with_callbacks(
         &self,
         in_toast: &Toast,
         on_activated: Option<Box<dyn FnMut(Result<String>) + Send + 'static>>,
@@ -230,5 +230,10 @@ impl ToastManager {
         notifier.Show(&toast)?;
 
         Ok(())
+    }
+
+    /// Send a toast to Windows for display without any callbacks.
+    pub fn show(&self, in_toast: &Toast) -> Result<()> {
+        self.show_with_callbacks(in_toast, None, None, None)
     }
 }

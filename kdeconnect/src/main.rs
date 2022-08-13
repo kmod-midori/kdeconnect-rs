@@ -1,4 +1,4 @@
-#![allow(clippy::single_match, dead_code)]
+#![allow(clippy::single_match)]
 
 use std::{
     mem::MaybeUninit,

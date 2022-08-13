@@ -10,20 +10,6 @@ pub const PACKET_TYPE_IDENTITY: &str = "kdeconnect.identity";
 pub const PACKET_TYPE_PAIR: &str = "kdeconnect.pair";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type", content = "body")]
-pub enum PacketType {
-    #[serde(rename = "kdeconnect.battery.request", rename_all = "camelCase")]
-    BatteryRequest { request: bool },
-    #[serde(rename = "kdeconnect.clipboard", rename_all = "camelCase")]
-    Clipboard { content: Option<String> },
-    #[serde(rename = "kdeconnect.clipboard.connect", rename_all = "camelCase")]
-    ClipboardConnect {
-        timestamp: u64,
-        content: Option<String>,
-    },
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PairPacket {
     pair: bool,

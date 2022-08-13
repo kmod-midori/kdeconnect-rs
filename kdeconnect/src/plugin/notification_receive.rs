@@ -167,7 +167,7 @@ impl NotificationReceivePlugin {
         let on_activated = Box::new(move |_arg| {});
 
         tokio::task::spawn_blocking(move || {
-            utils::TOAST_MANAGER.show(
+            utils::TOAST_MANAGER.show_with_callbacks(
                 &toast,
                 Some(on_activated),
                 Some(on_dismissed),

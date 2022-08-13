@@ -3,7 +3,11 @@ name = "winrt-toast"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+authors = ["Harry Cheng <chengyuhui1@gmail.com>"]
+description = "A toast notification library for Windows 10 and 11."
 keywords = ["notification", "windows", "toast", "notify"]
+categories = ["os::windows-apis", "gui"]
+repository = "https://github.com/chengyuhui/kdeconnect-rs/tree/main/winrt-toast"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

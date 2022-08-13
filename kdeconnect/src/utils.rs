@@ -36,8 +36,7 @@ pub async fn simple_toast(title: &str, content: Option<&str>, attribution: Optio
         toast.text3(Text::new(attr).as_attribution());
     }
 
-    let res =
-        tokio::task::spawn_blocking(move || TOAST_MANAGER.show(&toast, None, None, None)).await;
+    let res = tokio::task::spawn_blocking(move || TOAST_MANAGER.show(&toast)).await;
     match res {
         Ok(Ok(_)) => {}
         Ok(Err(e)) => {
