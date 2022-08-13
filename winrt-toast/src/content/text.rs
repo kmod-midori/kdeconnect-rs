@@ -5,12 +5,12 @@ use crate::hs;
 /// The placement of the text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextPlacement {
-    /// Introduced in Anniversary Update. 
-    /// 
-    /// If you specify the value "attribution", the text is always displayed at the bottom of your notification, 
+    /// Introduced in Anniversary Update.
+    ///
+    /// If you specify the value "attribution", the text is always displayed at the bottom of your notification,
     /// along with your app's identity or the notification's timestamp.
-    /// 
-    /// On older versions of Windows that don't support attribution text, 
+    ///
+    /// On older versions of Windows that don't support attribution text,
     /// the text will simply be displayed as another text element.
     Attribution,
 }
@@ -43,6 +43,11 @@ impl Text {
     pub fn with_placement(mut self, placement: TextPlacement) -> Self {
         self.placement = Some(placement);
         self
+    }
+
+    /// Set the placement of the text to [`TextPlacement::Attribution`].
+    pub fn as_attribution(self) -> Self {
+        self.with_placement(TextPlacement::Attribution)
     }
 
     pub(crate) fn write_to_element(&self, id: u8, el: &XmlElement) -> crate::Result<()> {

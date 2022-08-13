@@ -4,10 +4,11 @@ use anyhow::{Context, Result};
 use lru_cache::LruCache;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-use winrt_toast::{DismissalReason, Header, Toast, ToastManager};
+use winrt_toast::{DismissalReason, Header, Text, Toast};
 
 use crate::{
     cache::PAYLOAD_CACHE, context::AppContextRef, device::DeviceHandle, packet::NetworkPacket,
+    utils,
 };
 
 use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
@@ -42,7 +43,6 @@ pub struct NotificationReceivePlugin {
     device: DeviceHandle,
     group_hash: String,
     id_to_icon_path: Mutex<LruCache<String, PathBuf>>,
-    toast_manager: ToastManager,
 }
 
 impl NotificationReceivePlugin {
@@ -54,9 +54,6 @@ impl NotificationReceivePlugin {
             ),
             device: dev,
             id_to_icon_path: Mutex::new(LruCache::new(100)),
-            toast_manager: ToastManager::new(
-                "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe",
-            ),
         }
     }
 
@@ -121,6 +118,7 @@ impl NotificationReceivePlugin {
             ))
             .text1(title)
             .text2(text)
+            .text3(Text::new(self.device.device_name()).as_attribution())
             .expires_in(Duration::from_secs(60 * 60 * 12))
             .tag(&id_hash)
             .group(&self.group_hash)
@@ -130,11 +128,10 @@ impl NotificationReceivePlugin {
             toast.image(
                 1,
                 winrt_toast::Image::new_local(path)?
-                    .with_placement(winrt_toast::image::ImagePlacement::AppLogoOverride),
+                    .with_placement(winrt_toast::content::image::ImagePlacement::AppLogoOverride),
             );
         }
 
-        let manager = self.toast_manager.clone();
         let id = notification.id.clone();
         let dev = self.device.clone();
         let rt_handle = tokio::runtime::Handle::current();
@@ -170,7 +167,7 @@ impl NotificationReceivePlugin {
         let on_activated = Box::new(move |_arg| {});
 
         tokio::task::spawn_blocking(move || {
-            manager.show(
+            utils::TOAST_MANAGER.show(
                 &toast,
                 Some(on_activated),
                 Some(on_dismissed),
@@ -195,12 +192,13 @@ impl NotificationReceivePlugin {
     }
 
     async fn remove_notification(&self, id: &str) -> Result<()> {
-        let manager = self.toast_manager.clone();
         let group_hash = self.group_hash.clone();
         let id_hash = format!("{:x}", md5::compute(id));
 
-        tokio::task::spawn_blocking(move || manager.remove_grouped_tag(&group_hash, &id_hash))
-            .await??;
+        tokio::task::spawn_blocking(move || {
+            utils::TOAST_MANAGER.remove_grouped_tag(&group_hash, &id_hash)
+        })
+        .await??;
 
         Ok(())
     }

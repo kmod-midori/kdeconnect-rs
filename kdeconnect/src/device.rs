@@ -18,6 +18,7 @@ use crate::{
     event::KdeConnectEvent,
     packet::{NetworkPacket, NetworkPacketWithPayload},
     plugin::PluginRepository,
+    utils,
 };
 
 static NEXT_CONN_ID: AtomicUsize = AtomicUsize::new(0);
@@ -28,6 +29,7 @@ pub struct ConnectionId(usize);
 #[derive(Clone)]
 pub struct DeviceHandle {
     device_id: Arc<String>,
+    device_name: Arc<String>,
     manager_handle: DeviceManagerHandle,
 }
 
@@ -42,6 +44,10 @@ impl std::fmt::Debug for DeviceHandle {
 impl DeviceHandle {
     pub fn device_id(&self) -> &str {
         &self.device_id
+    }
+
+    pub fn device_name(&self) -> &str {
+        &self.device_name
     }
 
     /// Send packet to device
@@ -254,12 +260,14 @@ impl DeviceManagerActor {
                 tx,
                 reply,
             } => {
-                log::info!("Adding device: {}", id);
-
                 let dh = DeviceHandle {
                     device_id: Arc::new(id.clone()),
+                    device_name: Arc::new(name.clone()),
                     manager_handle: self.handle.clone(),
                 };
+                
+                log::info!("Adding device: {}", id);
+                utils::simple_toast("Device Connected", None, Some(&name)).await;
 
                 if let Some(device) = self.devices.get_mut(&id) {
                     device.remote_addr = addr;
@@ -288,6 +296,8 @@ impl DeviceManagerActor {
                     if device.conn_id == conn_id {
                         // We are still on the same connection, so we can remove the device
                         log::info!("Removed device: {}", id);
+                        utils::simple_toast("Device Disconnected", None, Some(&device.name)).await;
+
                         self.devices.remove(&id);
                         self.update_active_device_count();
                     }

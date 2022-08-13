@@ -3,6 +3,7 @@
 use std::{
     mem::MaybeUninit,
     net::{Ipv4Addr, SocketAddr},
+    path::PathBuf,
     sync::Arc,
     time::Duration,
 };
@@ -37,6 +38,8 @@ mod platform_listener;
 mod plugin;
 mod tls;
 mod utils;
+
+pub const AUM_ID: &str = "Midori.KDEConnectRS";
 
 async fn udp_server(tcp_port: u16, ctx: AppContextRef) -> Result<()> {
     let socket = Socket::new(
@@ -390,6 +393,13 @@ fn main() -> Result<()> {
 
     let (event_tx, event_rx) = mpsc::channel(10);
 
+    winrt_toast::register(
+        AUM_ID,
+        "KDE Connect",
+        Some(&PathBuf::from(
+            r#"F:\Workspace\kdeconnect\kdeconnect\src\icons\tray.ico"#,
+        )),
+    )?;
     platform_listener::MyWindow::create(event_tx.clone())?;
     platform_listener::mpris::start(event_tx.clone())?;
 

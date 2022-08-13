@@ -1,4 +1,10 @@
-use winrt_toast::{Text, Toast};
+use winrt_toast::{Text, Toast, ToastManager};
+
+lazy_static::lazy_static! {
+    pub static ref TOAST_MANAGER: ToastManager = {
+        ToastManager::new(crate::AUM_ID)
+    };
+}
 
 pub fn unix_ts_ms() -> u64 {
     std::time::SystemTime::now()
@@ -18,16 +24,27 @@ pub fn global_toast_header() -> winrt_toast::Header {
     winrt_toast::Header::new("kdeconnect", "KDE Connect", "action=headerClick")
 }
 
-pub async fn simple_toast(title: &str, content: &str) {
+pub async fn simple_toast(title: &str, content: Option<&str>, attribution: Option<&str>) {
     let mut toast = Toast::new();
-    toast
-        .header(crate::utils::global_toast_header())
-        .text1(title);
+    toast.text1(title);
 
-    if !content.is_empty() {
-        toast.text2(content);
+    if let Some(c) = content {
+        toast.text2(c);
     }
 
-    // let manager = self.toast_manager.clone();
-    // tokio::task::spawn_blocking(move || manager.show(&toast, None, None, None)).await??;
+    if let Some(attr) = attribution {
+        toast.text3(Text::new(attr).as_attribution());
+    }
+
+    let res =
+        tokio::task::spawn_blocking(move || TOAST_MANAGER.show(&toast, None, None, None)).await;
+    match res {
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => {
+            log::error!("Failed to show toast: {:?}", e);
+        }
+        Err(e) => {
+            log::error!("Failed to show toast: {:?}", e);
+        }
+    }
 }
