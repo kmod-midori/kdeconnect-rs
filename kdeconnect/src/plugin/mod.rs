@@ -9,10 +9,11 @@ use crate::{
 mod battery;
 mod clipboard;
 mod connectivity_report;
-mod mpris;
-mod ping;
 mod input_receive;
+mod mpris;
 mod notification_receive;
+mod ping;
+mod share;
 
 #[async_trait::async_trait]
 pub trait KdeConnectPlugin: std::fmt::Debug + Send + Sync {
@@ -56,6 +57,8 @@ lazy_static::lazy_static! {
         outgoing_caps.extend(input_receive::InputReceivePlugin::outgoing_capabilities());
         incoming_caps.extend(battery::BatteryPlugin::incoming_capabilities());
         outgoing_caps.extend(battery::BatteryPlugin::outgoing_capabilities());
+        incoming_caps.extend(share::SharePlugin::incoming_capabilities());
+        outgoing_caps.extend(share::SharePlugin::outgoing_capabilities());
 
         (incoming_caps, outgoing_caps)
     };
@@ -87,6 +90,7 @@ impl PluginRepository {
         ));
         this.register(input_receive::InputReceivePlugin);
         this.register(battery::BatteryPlugin);
+        this.register(share::SharePlugin::new(dev.clone()));
 
         // Start the plugins
         let plugins = this
@@ -112,7 +116,7 @@ impl PluginRepository {
         let in_caps = P::incoming_capabilities();
         let out_caps = P::outgoing_capabilities();
 
-        log::info!(
+        log::debug!(
             "Registering plugin: {:?} with in={:?}, out={:?}",
             plugin,
             in_caps,

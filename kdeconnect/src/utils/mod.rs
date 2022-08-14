@@ -1,5 +1,7 @@
 use winrt_toast::{Text, Toast, ToastManager};
 
+pub mod clipboard;
+
 lazy_static::lazy_static! {
     pub static ref TOAST_MANAGER: ToastManager = {
         ToastManager::new(crate::AUM_ID)
@@ -17,11 +19,6 @@ pub fn log_if_error<R, E: std::fmt::Debug>(text: &str, res: Result<R, E>) {
     if let Err(e) = res {
         log::error!("{}: {:?}", text, e);
     }
-}
-
-/// Creates a toast header that is used to display KDE Connect's own notifications.
-pub fn global_toast_header() -> winrt_toast::Header {
-    winrt_toast::Header::new("kdeconnect", "KDE Connect", "action=headerClick")
 }
 
 pub async fn simple_toast(title: &str, content: Option<&str>, attribution: Option<&str>) {

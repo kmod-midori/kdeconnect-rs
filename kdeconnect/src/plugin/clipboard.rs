@@ -1,30 +1,33 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::{device::DeviceHandle, event::KdeConnectEvent, packet::NetworkPacket, utils};
-use clipboard_win::{formats, Clipboard, Getter, Setter};
+use crate::{
+    device::DeviceHandle,
+    event::KdeConnectEvent,
+    packet::NetworkPacket,
+    utils::{self, clipboard::ClipboardContent},
+};
 
 use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
 const PACKET_TYPE_CLIPBOARD: &str = "kdeconnect.clipboard";
 const PACKET_TYPE_CLIPBOARD_CONNECT: &str = "kdeconnect.clipboard.connect";
 
-fn try_open_clipboard() -> Result<Clipboard> {
-    let mut clipboard = None;
-    for _ in 0..10 {
-        if let Ok(c) = Clipboard::new() {
-            clipboard = Some(c);
-            break;
+#[derive(Debug)]
+struct CurrentClipboardContent {
+    content: ClipboardContent,
+    ts: u64,
+}
+
+impl CurrentClipboardContent {
+    pub fn new_now(content: ClipboardContent) -> Self {
+        Self {
+            content,
+            ts: utils::unix_ts_ms(),
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    if let Some(c) = clipboard {
-        Ok(c)
-    } else {
-        Err(anyhow::anyhow!("Could not open clipboard"))
     }
 }
 
@@ -35,7 +38,7 @@ struct ClipboardPacket {
 
 #[derive(Debug)]
 pub struct ClipboardPlugin {
-    content: Mutex<Option<ClipboardContent>>,
+    content: Mutex<Option<CurrentClipboardContent>>,
     device: DeviceHandle,
 }
 
@@ -48,29 +51,10 @@ impl ClipboardPlugin {
     }
 
     async fn read_clipboard(&self) -> Result<()> {
-        let content = tokio::task::spawn_blocking(|| {
-            let _clip = try_open_clipboard()?;
-
-            let formats = clipboard_win::EnumFormats::new().collect::<HashSet<_>>();
-
-            if formats.contains(&formats::CF_UNICODETEXT) {
-                let mut text = String::new();
-                formats::Unicode.read_clipboard(&mut text)?;
-                return Ok(ClipboardContent::new_now(ClipboardContentType::Text(text)));
-            }
-
-            if formats.contains(&formats::CF_HDROP) {
-                let mut list: Vec<String> = vec![];
-                formats::FileList.read_clipboard(&mut list)?;
-                return Ok(ClipboardContent::new_now(ClipboardContentType::Files(list)));
-            }
-
-            Ok::<_, anyhow::Error>(ClipboardContent::new_now(ClipboardContentType::Unsupported))
-        })
-        .await??;
+        let content = tokio::task::spawn_blocking(utils::clipboard::read).await??;
 
         let mut c = self.content.lock().await;
-        *c = Some(content);
+        *c = Some(CurrentClipboardContent::new_now(content));
 
         Ok(())
     }
@@ -78,14 +62,8 @@ impl ClipboardPlugin {
     async fn write_clipboard(&self, text: impl Into<String>) -> Result<()> {
         let text = text.into();
 
-        tokio::task::spawn_blocking(move || {
-            let _clip = try_open_clipboard()?;
-
-            formats::Unicode.write_clipboard(&text)?;
-
-            Ok::<_, anyhow::Error>(())
-        })
-        .await??;
+        tokio::task::spawn_blocking(move || utils::clipboard::write(ClipboardContent::Text(text)))
+            .await??;
 
         Ok(())
     }
@@ -94,17 +72,15 @@ impl ClipboardPlugin {
         let content = self.content.lock().await;
         if let Some(content) = content.as_ref() {
             match &content.content {
-                ClipboardContentType::Text(s) => {
+                ClipboardContent::Text(s) => {
                     let packet = NetworkPacket::new(
                         PACKET_TYPE_CLIPBOARD,
-                        ClipboardPacket {
-                            content: s.clone(),
-                        },
+                        ClipboardPacket { content: s.clone() },
                     );
                     self.device.send_packet(packet).await;
                 }
-                ClipboardContentType::Files(_) => {}
-                ClipboardContentType::Unsupported => {}
+                ClipboardContent::Files(_) => {}
+                ClipboardContent::Unsupported => {}
             }
         }
     }
@@ -151,26 +127,4 @@ impl KdeConnectPluginMetadata for ClipboardPlugin {
             PACKET_TYPE_CLIPBOARD_CONNECT.into(),
         ]
     }
-}
-
-#[derive(Debug)]
-struct ClipboardContent {
-    content: ClipboardContentType,
-    ts: u64,
-}
-
-impl ClipboardContent {
-    fn new_now(content: ClipboardContentType) -> Self {
-        Self {
-            content,
-            ts: utils::unix_ts_ms(),
-        }
-    }
-}
-
-#[derive(Debug)]
-enum ClipboardContentType {
-    Text(String),
-    Files(Vec<String>),
-    Unsupported,
 }
