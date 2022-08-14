@@ -21,7 +21,7 @@ impl ActivationType {
 }
 
 /// Specifies a custom header that groups multiple notifications together within Action Center.
-/// 
+///
 /// See <https://docs.microsoft.com/en-us/windows/apps/design/shell/tiles-and-notifications/toast-headers>
 #[derive(Debug, Clone)]
 pub struct Header {

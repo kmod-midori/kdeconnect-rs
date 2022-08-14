@@ -87,8 +87,8 @@ pub async fn open_url(url: impl Into<String>) -> Result<()> {
     let (req, rx) = WindowsApiRequest::new(RequestType::OpenItem(url.into()));
     match WINDOWS_API_SENDER.send(req).await {
         Ok(_) => rx.await?,
-        Err(_) => {
-            Err(anyhow::anyhow!("Failed to send request to Windows API thread (channel closed)"))
-        }
+        Err(_) => Err(anyhow::anyhow!(
+            "Failed to send request to Windows API thread (channel closed)"
+        )),
     }
 }

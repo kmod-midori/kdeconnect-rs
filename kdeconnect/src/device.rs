@@ -265,7 +265,7 @@ impl DeviceManagerActor {
                     device_name: Arc::new(name.clone()),
                     manager_handle: self.handle.clone(),
                 };
-                
+
                 log::info!("Adding device: {}", id);
                 utils::simple_toast("Device Connected", None, Some(&name)).await;
 

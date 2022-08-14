@@ -15,10 +15,10 @@ use windows::{
 use crate::WinToastError;
 
 /// Register the application to Windows registry.
-/// 
+///
 /// `icon_path` should be an absolute path to the icon file, otherwise [`WinToastError::InvalidPath`] will be returned.
-/// 
-/// For more information on AUMID and registration, see this 
+///
+/// For more information on AUMID and registration, see this
 /// [Windows documentation](https://docs.microsoft.com/en-us/windows/apps/design/shell/tiles-and-notifications/send-local-toast-desktop-cpp-wrl#step-5-register-with-notification-platform).
 pub fn register(aum_id: &str, display_name: &str, icon_path: Option<&Path>) -> crate::Result<()> {
     let registry_path = HSTRING::from(format!("SOFTWARE\\Classes\\AppUserModelId\\{}", aum_id));
