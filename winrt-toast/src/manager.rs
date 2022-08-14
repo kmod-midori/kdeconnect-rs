@@ -116,6 +116,18 @@ impl ToastManager {
         let toast_el = toast_doc.CreateElement(&hs("toast"))?;
         toast_doc.AppendChild(&toast_el)?;
 
+        if let Some(scenario) = &in_toast.scenario {
+            toast_el.SetAttribute(&hs("scenario"), &hs(scenario.as_str()))?;
+        }
+
+        if let Some(launch) = &in_toast.launch {
+            toast_el.SetAttribute(&hs("launch"), &hs(launch))?;
+        }
+
+        if let Some(duration) = &in_toast.duration {
+            toast_el.SetAttribute(&hs("duration"), &hs(duration.as_str()))?;
+        }
+
         // <header>
         if let Some(header) = &in_toast.header {
             let el = toast_doc.CreateElement(&hs("header"))?;
@@ -159,6 +171,17 @@ impl ToastManager {
             // </binding>
         }
         // </visual>
+        // <actions>
+        if !in_toast.actions.is_empty() {
+            let actions_el = toast_doc.CreateElement(&hs("actions"))?;
+            toast_el.AppendChild(&actions_el)?;
+            for action in &in_toast.actions {
+                let el = toast_doc.CreateElement(&hs("action"))?;
+                actions_el.AppendChild(&el)?;
+                action.write_to_element(&el)?;
+            }
+        }
+        // </actions>
 
         let toast = ToastNotification::CreateToastNotification(&toast_doc)?;
 

@@ -30,7 +30,8 @@ manager.show_with_callbacks(
 ```
 
 ## To-Do Features
-* [ ] Actions
+* [x] Button style and tooltips in actions 
 * [ ] Better callbacks
 * [ ] Sound
 * [ ] Adaptive contents and data binding
+* [ ] Groups and sub-groups

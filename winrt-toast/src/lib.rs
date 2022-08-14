@@ -35,12 +35,13 @@ pub mod content;
 pub use content::header::Header;
 pub use content::image::Image;
 pub use content::text::Text;
+pub use content::action::Action;
 
 mod manager;
 pub use manager::{DismissalReason, ToastManager};
 
 mod toast;
-pub use toast::Toast;
+pub use toast::{Toast, Scenario, ToastDuration};
 
 mod register;
 pub use register::register;

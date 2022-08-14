@@ -1,6 +1,8 @@
-/// Header elements
+/// Header element
 pub mod header;
-/// Image elements
+/// Image element
 pub mod image;
-/// Text elements
+/// Text element
 pub mod text;
+/// Action element
+pub mod action;
