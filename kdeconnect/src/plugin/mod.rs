@@ -13,6 +13,7 @@ mod input_receive;
 mod mpris;
 mod notification_receive;
 mod ping;
+mod run_command;
 mod share;
 
 #[async_trait::async_trait]
@@ -59,6 +60,8 @@ lazy_static::lazy_static! {
         outgoing_caps.extend(battery::BatteryPlugin::outgoing_capabilities());
         incoming_caps.extend(share::SharePlugin::incoming_capabilities());
         outgoing_caps.extend(share::SharePlugin::outgoing_capabilities());
+        incoming_caps.extend(run_command::RunCommandPlugin::incoming_capabilities());
+        outgoing_caps.extend(run_command::RunCommandPlugin::outgoing_capabilities());
 
         (incoming_caps, outgoing_caps)
     };
@@ -91,6 +94,7 @@ impl PluginRepository {
         this.register(input_receive::InputReceivePlugin);
         this.register(battery::BatteryPlugin);
         this.register(share::SharePlugin::new(dev.clone()));
+        this.register(run_command::RunCommandPlugin::new(dev.clone()));
 
         // Start the plugins
         let plugins = this
