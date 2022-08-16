@@ -1,5 +1,5 @@
 //! A mostly usable binding to the Windows `ToastNotification` API.
-//! 
+//!
 //! # Example
 //! ```no_run
 //! use winrt_toast::{Toast, Text, Header, ToastManager};
@@ -32,16 +32,16 @@
 
 /// Contents in a toast notification.
 pub mod content;
+pub use content::action::Action;
 pub use content::header::Header;
 pub use content::image::Image;
 pub use content::text::Text;
-pub use content::action::Action;
 
 mod manager;
 pub use manager::{DismissalReason, ToastManager};
 
 mod toast;
-pub use toast::{Toast, Scenario, ToastDuration};
+pub use toast::{Scenario, Toast, ToastDuration};
 
 mod register;
 pub use register::register;

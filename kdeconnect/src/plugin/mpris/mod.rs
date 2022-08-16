@@ -1,11 +1,12 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::{
+    cache::PAYLOAD_CACHE,
     context::AppContextRef,
     device::DeviceHandle,
     event::KdeConnectEvent,
     packet::{NetworkPacket, NetworkPacketWithPayload},
-    utils, cache::PAYLOAD_CACHE,
+    utils,
 };
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -26,8 +27,6 @@ use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 const PACKET_TYPE_MPRIS: &str = "kdeconnect.mpris";
 const PACKET_TYPE_MPRIS_REQUEST: &str = "kdeconnect.mpris.request";
 const COVER_URL_PREFIX: &str = "file:///";
-
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -292,7 +291,6 @@ impl MprisPlugin {
                 Ok(())
             }))
             .context("Subscribe to MediaPropertiesChanged")?;
-
 
         let sid = id.clone();
         let playback_info_token = session

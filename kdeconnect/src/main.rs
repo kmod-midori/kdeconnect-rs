@@ -23,7 +23,6 @@ use tokio_rustls::{
 
 mod packet;
 use packet::{IdentityPacket, NetworkPacket, NetworkPacketWithPayload};
-use trayicon::{Icon, MenuBuilder, MenuItem, TrayIconBuilder};
 use windows::Win32::{
     Foundation::HWND,
     UI::WindowsAndMessaging::{DispatchMessageA, GetMessageA, TranslateMessage},
@@ -37,6 +36,7 @@ mod event;
 mod platform_listener;
 mod plugin;
 mod tls;
+mod tray;
 mod utils;
 
 pub const AUM_ID: &str = "Midori.KDEConnectRS";
@@ -216,6 +216,12 @@ async fn handle_conn(
     let stream = connector
         .connect(ServerName::IpAddress(addr.ip()), stream)
         .await?;
+    let peer_cert = stream
+        .get_ref()
+        .1
+        .peer_certificates()
+        .and_then(|c| c.first());
+
     let mut stream = BufStream::new(stream);
 
     log::info!(
@@ -339,10 +345,11 @@ async fn server_main(_event_tx: event::EventSender, event_rx: event::EventReceiv
         .await
         .context("Initialize context")?;
 
+    // Use the same certificate when we are acting as client and server.
+
     let client_config = ClientConfig::builder()
         .with_safe_defaults()
-        .with_custom_certificate_verifier(Arc::new(tls::ServerVerifier))
-        // .with_client_cert_verifier(Arc::new(ClientVerifier))
+        .with_custom_certificate_verifier(Arc::new(tls::ServerVerifier::AlwaysOk))
         .with_single_cert(
             vec![tokio_rustls::rustls::Certificate(
                 ctx.config.tls_cert.clone(),
@@ -352,7 +359,7 @@ async fn server_main(_event_tx: event::EventSender, event_rx: event::EventReceiv
 
     let server_config = ServerConfig::builder()
         .with_safe_defaults()
-        .with_client_cert_verifier(Arc::new(tls::ClientVerifier))
+        .with_client_cert_verifier(Arc::new(tls::ClientVerifier::AlwaysOk))
         .with_single_cert(
             vec![tokio_rustls::rustls::Certificate(
                 ctx.config.tls_cert.clone(),
@@ -408,93 +415,6 @@ fn main() -> Result<()> {
         if let Err(e) = r {
             log::error!("Server exited with error: {}", e);
         }
-    });
-
-    #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-    #[allow(dead_code)]
-    enum Events {
-        ClickTrayIcon,
-        DoubleClickTrayIcon,
-        Exit,
-        Item1,
-        Item2,
-        Item3,
-        Item4,
-        CheckItem1,
-        SubItem1,
-        SubItem2,
-        SubItem3,
-    }
-
-    let (s, r) = std::sync::mpsc::channel::<Events>();
-    let icon = include_bytes!("icons/green.ico");
-    let icon2 = include_bytes!("icons/red.ico");
-
-    let second_icon = Icon::from_buffer(icon2, None, None).unwrap();
-    let first_icon = Icon::from_buffer(icon, None, None).unwrap();
-
-    let mut tray_icon = TrayIconBuilder::new()
-        .sender(s)
-        .icon_from_buffer(icon)
-        // .tooltip("Cool Tray 👀 Icon")
-        // .on_click(Events::ClickTrayIcon)
-        // .on_double_click(Events::DoubleClickTrayIcon)
-        .menu(
-            MenuBuilder::new()
-                .item("Item 3 Replace Menu 👍", Events::Item3)
-                .item("Item 2 Change Icon Green", Events::Item2)
-                .item("Item 1 Change Icon Red", Events::Item1)
-                .separator()
-                .checkable("This is checkable", true, Events::CheckItem1)
-                .submenu(
-                    "Sub Menu",
-                    MenuBuilder::new()
-                        .item("Sub item 1", Events::SubItem1)
-                        .item("Sub Item 2", Events::SubItem2)
-                        .item("Sub Item 3", Events::SubItem3),
-                )
-                .with(MenuItem::Item {
-                    name: "Item Disabled".into(),
-                    disabled: true, // Disabled entry example
-                    id: Events::Item4,
-                    icon: None,
-                })
-                .separator()
-                .item("E&xit", Events::Exit),
-        )
-        .build()
-        .unwrap();
-
-    std::thread::spawn(move || {
-        r.iter().for_each(|m| match m {
-            Events::DoubleClickTrayIcon => {
-                println!("Double click");
-            }
-            Events::ClickTrayIcon => {
-                println!("Single click");
-            }
-            Events::Exit => {
-                println!("Please exit");
-            }
-            Events::Item1 => {
-                tray_icon.set_icon(&second_icon).unwrap();
-            }
-            Events::Item2 => {
-                tray_icon.set_icon(&first_icon).unwrap();
-            }
-            Events::Item3 => {
-                tray_icon
-                    .set_menu(
-                        &MenuBuilder::new()
-                            .item("New menu item", Events::Item1)
-                            .item("Exit", Events::Exit),
-                    )
-                    .unwrap();
-            }
-            e => {
-                println!("{:?}", e);
-            }
-        })
     });
 
     loop {

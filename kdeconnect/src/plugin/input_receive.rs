@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::packet::NetworkPacket;
 
-use super::{ KdeConnectPlugin, KdeConnectPluginMetadata};
+use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
 use windows::Win32::UI::Input::KeyboardAndMouse;
 
@@ -126,7 +126,7 @@ impl KdeConnectPlugin for InputReceivePlugin {
                             },
                         },
                     };
-                    
+
                     let mut up = down;
                     up.Anonymous.mi.dwFlags = KeyboardAndMouse::MOUSEEVENTF_LEFTUP;
 

@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use rcgen::{CertificateParams, DistinguishedName};
+use tokio_rustls::rustls;
 use tokio_rustls::rustls::Error as TlsError;
 
 /// Parse a `rustls::Certificate` as an `x509_signature::X509Certificate`, if possible.
@@ -51,7 +52,13 @@ fn convert_scheme(
     })
 }
 
-pub struct ServerVerifier;
+/// A TLS server verifier that does not actually verify the certificate.
+pub enum ServerVerifier {
+    /// A server verifier that always returns `Ok`.
+    AlwaysOk,
+    /// A server verifier that returns `Ok` for a particular certificate.
+    Single(rustls::Certificate),
+}
 
 // https://github.com/c4dt/arti/commit/8def5a0d89603c8f1cfd91109bb439f1881d968f
 impl tokio_rustls::rustls::client::ServerCertVerifier for ServerVerifier {
@@ -105,7 +112,13 @@ impl tokio_rustls::rustls::client::ServerCertVerifier for ServerVerifier {
     }
 }
 
-pub struct ClientVerifier;
+/// A TLS client verifier that does not actually verify the certificate.
+pub enum ClientVerifier {
+    /// A client verifier that always returns `Ok`.
+    AlwaysOk,
+    /// A client verifier that returns `Ok` for a particular certificate.
+    Single(rustls::Certificate),
+}
 
 impl tokio_rustls::rustls::server::ClientCertVerifier for ClientVerifier {
     fn offer_client_auth(&self) -> bool {

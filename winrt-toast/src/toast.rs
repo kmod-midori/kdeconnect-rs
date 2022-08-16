@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use crate::{Header, Image, Text, Action};
+use crate::{Action, Header, Image, Text};
 
 /// Represents a Windows toast.
 ///

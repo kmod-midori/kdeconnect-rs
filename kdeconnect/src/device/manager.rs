@@ -14,79 +14,16 @@ use tokio::{
 };
 
 use crate::{
-    context::AppContextRef,
-    event::KdeConnectEvent,
-    packet::{NetworkPacket, NetworkPacketWithPayload},
-    plugin::PluginRepository,
-    utils,
+    context::AppContextRef, device::DeviceHandle, event::KdeConnectEvent,
+    packet::NetworkPacketWithPayload, plugin::PluginRepository, utils,
 };
+
+use super::Message;
 
 static NEXT_CONN_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConnectionId(usize);
-
-#[derive(Clone)]
-pub struct DeviceHandle {
-    device_id: Arc<String>,
-    device_name: Arc<String>,
-    manager_handle: DeviceManagerHandle,
-}
-
-impl std::fmt::Debug for DeviceHandle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DeviceHandle")
-            .field("device_id", &self.device_id)
-            .finish()
-    }
-}
-
-impl DeviceHandle {
-    pub fn device_id(&self) -> &str {
-        &self.device_id
-    }
-
-    pub fn device_name(&self) -> &str {
-        &self.device_name
-    }
-
-    /// Send packet to device
-    pub async fn send_packet(&self, packet: impl Into<NetworkPacketWithPayload>) {
-        self.manager_handle
-            .send_packet(self.device_id(), packet)
-            .await;
-    }
-
-    pub fn blocking_send_packet(&self, packet: impl Into<NetworkPacketWithPayload>) {
-        self.manager_handle
-            .blocking_send_packet(self.device_id(), packet);
-    }
-
-    /// Dispatch received packet from the device to plugins
-    pub async fn dispatch_packet(&self, packet: impl Into<NetworkPacket>) {
-        self.manager_handle
-            .send_message(Message::Packet {
-                device_id: self.device_id.to_string(),
-                packet: packet.into(),
-            })
-            .await;
-    }
-
-    pub async fn fetch_payload(&self, port: u16, size: usize) -> Result<Vec<u8>> {
-        let (tx, rx) = oneshot::channel();
-
-        self.manager_handle
-            .send_message(Message::FetchPayload {
-                device_id: self.device_id.to_string(),
-                port,
-                size,
-                reply: tx,
-            })
-            .await;
-
-        rx.await?
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct DeviceManagerHandle {
@@ -137,14 +74,8 @@ impl DeviceManagerHandle {
         self.send_message(msg).await;
     }
 
-    async fn send_message(&self, msg: Message) {
+    pub(super) async fn send_message(&self, msg: Message) {
         self.sender.send(msg).await.expect("Failed to send message");
-    }
-
-    fn blocking_send_message(&self, msg: Message) {
-        self.sender
-            .blocking_send(msg)
-            .expect("Failed to send message");
     }
 
     pub fn active_device_count(&self) -> usize {
@@ -166,51 +97,6 @@ impl DeviceManagerHandle {
         };
         self.send_message(msg).await;
     }
-
-    pub fn blocking_send_packet(
-        &self,
-        device_id: &str,
-        packet: impl Into<NetworkPacketWithPayload>,
-    ) {
-        let packet: NetworkPacketWithPayload = packet.into();
-
-        let msg = Message::SendPacket {
-            device_id: Some(device_id.into()),
-            packet,
-        };
-        self.blocking_send_message(msg);
-    }
-}
-
-#[derive(Debug)]
-enum Message {
-    AddDevice {
-        id: String,
-        name: String,
-        addr: SocketAddr,
-        conn_id: ConnectionId,
-        tx: mpsc::Sender<NetworkPacketWithPayload>,
-        reply: oneshot::Sender<DeviceHandle>,
-    },
-    RemoveDevice {
-        id: String,
-        conn_id: ConnectionId,
-    },
-    SendPacket {
-        device_id: Option<String>,
-        packet: NetworkPacketWithPayload,
-    },
-    Event(KdeConnectEvent),
-    Packet {
-        device_id: String,
-        packet: NetworkPacket,
-    },
-    FetchPayload {
-        device_id: String,
-        port: u16,
-        size: usize,
-        reply: oneshot::Sender<Result<Vec<u8>>>,
-    },
 }
 
 #[derive(Debug)]
@@ -265,7 +151,7 @@ impl DeviceManagerActor {
                     device_name: Arc::new(name.clone()),
                     manager_handle: self.handle.clone(),
                 };
-                
+
                 log::info!("Adding device: {}", id);
                 utils::simple_toast("Device Connected", None, Some(&name)).await;
 
@@ -374,7 +260,7 @@ impl DeviceManagerActor {
                             Err(anyhow::anyhow!(
                                 "Payload size mismatch: {} (fetched) != {} (requested)",
                                 buf.len(),
-                                size
+                                size 
                             ))
                         }
                     };

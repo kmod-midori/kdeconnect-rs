@@ -18,8 +18,8 @@ impl Action {
     /// `arguments`: An argument string that can be passed to the associated app
     /// to provide specifics about the action that it should execute
     /// in response to the user action.
-    /// 
-    /// `typ`: An argument string that can be passed to the associated app to 
+    ///
+    /// `typ`: An argument string that can be passed to the associated app to
     /// provide specifics about the action that it should execute in response to the user action.
     pub fn new(
         content: impl Into<String>,
