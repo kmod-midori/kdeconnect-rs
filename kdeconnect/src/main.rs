@@ -194,7 +194,15 @@ async fn handle_conn(
     ctx: AppContextRef,
 ) -> Result<()> {
     let s2_socket = Socket::from(stream.into_std()?);
+    // enable keepalive
     s2_socket.set_keepalive(true)?;
+    s2_socket.set_tcp_keepalive(
+        &socket2::TcpKeepalive::new()
+            // time to start sending keepalive packets (seconds)
+            .with_time(Duration::from_secs(10))
+            // interval between keepalive packets after the initial period (seconds)
+            .with_interval(Duration::from_secs(5)),
+    )?;
     let mut stream = TcpStream::from_std(s2_socket.into())?;
 
     let mut remote_identity = vec![];
