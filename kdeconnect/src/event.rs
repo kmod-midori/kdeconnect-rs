@@ -1,3 +1,4 @@
+use tao::menu::MenuId;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
@@ -7,6 +8,16 @@ pub enum KdeConnectEvent {
     ClipboardUpdated,
     HotkeyPressed,
     MediaSessionsChanged,
+    TrayMenuClicked(MenuId),
+}
+
+impl KdeConnectEvent {
+    pub fn is_menu_clicked(&self, id: MenuId) -> bool {
+        match self {
+            KdeConnectEvent::TrayMenuClicked(id2) => &id == id2,
+            _ => false,
+        }
+    }
 }
 
 pub type EventSender = mpsc::Sender<KdeConnectEvent>;

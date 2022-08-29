@@ -1,8 +1,9 @@
-use crate::{config::Config, device::DeviceManagerHandle};
+use crate::{config::Config, device::DeviceManagerHandle, CustomWindowEvent};
 use anyhow::Result;
 use once_cell::sync::OnceCell;
 use std::{fmt::Debug, sync::Arc};
-use tokio::net::{TcpStream, ToSocketAddrs};
+use tao::{event_loop::EventLoopProxy, global_shortcut::ShortcutManager};
+use tokio::{net::{TcpStream, ToSocketAddrs}, sync::Mutex};
 use tokio_rustls::{client::TlsStream, TlsAcceptor, TlsConnector};
 
 pub type AppContextRef = Arc<ApplicationContext>;
@@ -13,6 +14,8 @@ pub struct ApplicationContext {
     pub config: Config,
     pub tls_acceptor: OnceCell<TlsAcceptor>,
     pub tls_connector: OnceCell<TlsConnector>,
+    pub event_loop_proxy: EventLoopProxy<CustomWindowEvent>,
+    pub hotkey_manager: Mutex<ShortcutManager>,
 }
 
 impl Debug for ApplicationContext {
@@ -22,7 +25,11 @@ impl Debug for ApplicationContext {
 }
 
 impl ApplicationContext {
-    pub async fn new(config: Config) -> Result<Arc<Self>> {
+    pub async fn new(
+        config: Config,
+        event_loop_proxy: EventLoopProxy<CustomWindowEvent>,
+        hotkey_manager: ShortcutManager
+    ) -> Result<Arc<Self>> {
         let (device_manager_actor, device_manager) = crate::device::DeviceManagerActor::new();
         // let plugin_repo = PluginRepository::new();
 
@@ -32,6 +39,8 @@ impl ApplicationContext {
             config,
             tls_acceptor: OnceCell::new(),
             tls_connector: OnceCell::new(),
+            event_loop_proxy,
+            hotkey_manager: Mutex::new(hotkey_manager)
         });
 
         device_manager_actor.run(this.clone());
@@ -68,5 +77,9 @@ impl ApplicationContext {
             .await?;
 
         Ok(tls_stream)
+    }
+
+    pub async fn update_tray_menu(&self) {
+        self.device_manager.update_tray_menu().await;
     }
 }

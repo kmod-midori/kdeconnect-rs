@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::{collections::HashSet, sync::Arc};
+use tao::menu::ContextMenu;
 
 use crate::{
     context::AppContextRef, device::DeviceHandle, event::KdeConnectEvent, packet::NetworkPacket,
@@ -28,6 +29,8 @@ pub trait KdeConnectPlugin: std::fmt::Debug + Send + Sync {
     async fn hotkeys(&self) -> Vec<()> {
         vec![]
     }
+    /// Create necessary context menu items for this plugin.
+    async fn tray_menu(&self, _menu: &mut ContextMenu) {}
 }
 
 pub trait KdeConnectPluginMetadata {
@@ -78,6 +81,8 @@ impl PluginRepository {
     pub async fn new(dev: DeviceHandle, ctx: AppContextRef) -> Self {
         let mut this = Self::default();
 
+        // This also determines the order in which plugins are shown in tray menu.
+        this.register(battery::BatteryPlugin::new(ctx.clone()));
         this.register(ping::PingPlugin::new(dev.clone()));
         this.register(connectivity_report::ConnectivityReportPlugin);
         this.register(clipboard::ClipboardPlugin::new(dev.clone()));
@@ -92,7 +97,6 @@ impl PluginRepository {
             ctx.clone(),
         ));
         this.register(input_receive::InputReceivePlugin);
-        this.register(battery::BatteryPlugin);
         this.register(share::SharePlugin::new(dev.clone()));
         this.register(run_command::RunCommandPlugin::new(dev.clone()));
 
@@ -155,5 +159,15 @@ impl PluginRepository {
                 log::error!("Error handling event: {}", e);
             }
         }
+    }
+
+    pub async fn create_tray_menu(&self) -> ContextMenu {
+        let mut menu = ContextMenu::new();
+
+        for (_, plugin) in &self.plugins {
+            plugin.tray_menu(&mut menu).await;
+        }
+
+        menu
     }
 }

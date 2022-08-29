@@ -1,7 +1,6 @@
-#![allow(clippy::single_match)]
+#![allow(clippy::single_match, dead_code)]
 
 use std::{
-    mem::MaybeUninit,
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::Arc,
@@ -11,6 +10,14 @@ use std::{
 use anyhow::{bail, Context, Result};
 use context::AppContextRef;
 use socket2::{Domain, Socket};
+use tao::{
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop, EventLoopProxy},
+    global_shortcut::ShortcutManager,
+    menu::{ContextMenu, MenuType},
+    system_tray::SystemTrayBuilder,
+    window::{Icon, WindowBuilder},
+};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufStream},
     net::{TcpListener, TcpStream, UdpSocket},
@@ -23,10 +30,6 @@ use tokio_rustls::{
 
 mod packet;
 use packet::{IdentityPacket, NetworkPacket, NetworkPacketWithPayload};
-use windows::Win32::{
-    Foundation::HWND,
-    UI::WindowsAndMessaging::{DispatchMessageA, GetMessageA, TranslateMessage},
-};
 
 mod cache;
 mod config;
@@ -36,8 +39,12 @@ mod event;
 mod platform_listener;
 mod plugin;
 mod tls;
-mod tray;
 mod utils;
+
+pub enum CustomWindowEvent {
+    ClipboardUpdated,
+    SetTrayMenu(ContextMenu),
+}
 
 pub const AUM_ID: &str = "Midori.KDEConnectRS";
 
@@ -224,7 +231,7 @@ async fn handle_conn(
     let stream = connector
         .connect(ServerName::IpAddress(addr.ip()), stream)
         .await?;
-    let peer_cert = stream
+    let _peer_cert = stream
         .get_ref()
         .1
         .peer_certificates()
@@ -342,14 +349,19 @@ async fn event_handler(mut rx: event::EventReceiver, ctx: AppContextRef) {
 }
 
 #[tokio::main]
-async fn server_main(_event_tx: event::EventSender, event_rx: event::EventReceiver) -> Result<()> {
+async fn server_main(
+    event_channel: (event::EventSender, event::EventReceiver),
+    event_loop_proxy: EventLoopProxy<CustomWindowEvent>,
+    hotkey_manager: ShortcutManager,
+) -> Result<()> {
+    let (_, event_rx) = event_channel;
     let (tcp_listener, tcp_port) = open_tcp_server().await?;
 
     log::info!("TCP port: {}", tcp_port);
 
     let config = config::Config::init_or_load("./config.json")?;
 
-    let ctx = context::ApplicationContext::new(config)
+    let ctx = context::ApplicationContext::new(config, event_loop_proxy, hotkey_manager)
         .await
         .context("Initialize context")?;
 
@@ -415,32 +427,93 @@ fn main() -> Result<()> {
             r#"F:\Workspace\kdeconnect\kdeconnect\src\icons\tray.ico"#,
         )),
     )?;
-    platform_listener::MyWindow::create(event_tx.clone())?;
     platform_listener::mpris::start(event_tx.clone())?;
 
+    let event_loop: EventLoop<CustomWindowEvent> = EventLoop::with_user_event();
+
+    let icon = Icon::from_rgba(vec![0; 32 * 32 * 4], 32, 32).unwrap();
+    let mut system_tray = SystemTrayBuilder::new(icon, None)
+        .with_tooltip("KDE Connect")
+        .build(&event_loop)
+        .unwrap();
+
+    let hotkey_manager = ShortcutManager::new(&event_loop);
+
+    let clipboard_listener = platform_listener::clipboard::ClipboardListener::new(&event_loop)?;
+
+    let window = WindowBuilder::new()
+        .with_title("KDEConnect.rs")
+        .with_visible(false)
+        .build(&event_loop)
+        .unwrap();
+
+    let event_tx_main = event_tx.clone();
+    let proxy = event_loop.create_proxy();
     std::thread::spawn(|| {
-        let r = server_main(event_tx, event_rx);
+        let r = server_main((event_tx_main, event_rx), proxy, hotkey_manager);
         if let Err(e) = r {
             log::error!("Server exited with error: {}", e);
         }
     });
 
-    loop {
-        unsafe {
-            let mut msg = MaybeUninit::uninit();
+    event_loop.run(move |event, _, control_flow| {
+        let _ = clipboard_listener;
 
-            let bret = GetMessageA(msg.as_mut_ptr(), HWND(0), 0, 0);
+        *control_flow = ControlFlow::Wait;
 
-            if bret.as_bool() {
-                TranslateMessage(msg.as_ptr());
-                DispatchMessageA(msg.as_ptr());
-            } else {
-                break;
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                window_id,
+                ..
+            } if window_id == window.id() => *control_flow = ControlFlow::Exit,
+            Event::MainEventsCleared => {
+                window.request_redraw();
             }
+            // Event::GlobalShortcutEvent(hotkey_id) if hotkey_id == shortcut_1.clone().id() => {
+            //     println!("Pressed `shortcut_1` -- unregister for future use");
+            //     // unregister key
+            //     hotkey_manager
+            //         .unregister(global_shortcut_1.clone())
+            //         .unwrap();
+            // }
+            // Event::GlobalShortcutEvent(hotkey_id) if hotkey_id == shortcut_2.clone().id() => {
+            //     println!("Pressed on `shortcut_2`");
+            // }
+            // // you can match hotkey_id with accelerator_string only if you used `from_str`
+            // // by example `shortcut_1` will NOT match AcceleratorId::new("SHIFT+UP") as it's
+            // // been created with a struct and the ID is generated automatically
+            // Event::GlobalShortcutEvent(hotkey_id)
+            //     if hotkey_id == AcceleratorId::new("COMMANDORCONTROL+SHIFT+3") =>
+            // {
+            //     println!("Pressed on `shortcut_3`");
+            // }
+            // Event::GlobalShortcutEvent(hotkey_id) if hotkey_id == shortcut_4.clone().id() => {
+            //     println!("Pressed on `shortcut_4`");
+            // }
+            Event::GlobalShortcutEvent(hotkey_id) => {
+                println!("hotkey_id {:?}", hotkey_id);
+            }
+            Event::MenuEvent {
+                menu_id, origin, ..
+            } if origin == MenuType::ContextMenu => {
+                event_tx
+                    .blocking_send(event::KdeConnectEvent::TrayMenuClicked(menu_id))
+                    .ok();
+            }
+            Event::UserEvent(event) => match event {
+                CustomWindowEvent::ClipboardUpdated => {
+                    event_tx
+                        .blocking_send(event::KdeConnectEvent::ClipboardUpdated)
+                        .ok();
+                }
+                CustomWindowEvent::SetTrayMenu(menu) => {
+                    system_tray.set_menu(&menu);
+                }
+            },
+            _ => {}
         }
-    }
-
-    Ok(())
+    });
 }
 
 fn setup_logger() -> Result<(), fern::InitError> {

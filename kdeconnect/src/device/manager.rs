@@ -7,6 +7,7 @@ use std::{
         Arc,
     },
 };
+use tao::menu::ContextMenu;
 
 use tokio::{
     io::AsyncReadExt,
@@ -15,7 +16,7 @@ use tokio::{
 
 use crate::{
     context::AppContextRef, device::DeviceHandle, event::KdeConnectEvent,
-    packet::NetworkPacketWithPayload, plugin::PluginRepository, utils,
+    packet::NetworkPacketWithPayload, plugin::PluginRepository, utils, CustomWindowEvent,
 };
 
 use super::Message;
@@ -88,6 +89,10 @@ impl DeviceManagerHandle {
         self.send_message(Message::Event(event)).await;
     }
 
+    pub async fn update_tray_menu(&self) {
+        self.send_message(Message::UpdateTrayMenu).await;
+    }
+
     pub async fn send_packet(&self, device_id: &str, packet: impl Into<NetworkPacketWithPayload>) {
         let packet: NetworkPacketWithPayload = packet.into();
 
@@ -137,6 +142,8 @@ impl DeviceManagerActor {
     }
 
     async fn handle_message(&mut self, msg: Message, ctx: &AppContextRef) {
+        let mut tray_updated = false;
+
         match msg {
             Message::AddDevice {
                 id,
@@ -176,6 +183,8 @@ impl DeviceManagerActor {
                 let _ = reply.send(dh);
 
                 self.update_active_device_count();
+
+                tray_updated = true;
             }
             Message::RemoveDevice { id, conn_id } => {
                 if let Some(device) = self.devices.get_mut(&id) {
@@ -188,6 +197,8 @@ impl DeviceManagerActor {
                         self.update_active_device_count();
                     }
                 }
+                
+                tray_updated = true;
             }
             Message::SendPacket { packet, device_id } => {
                 if let Some(device_id) = device_id {
@@ -260,13 +271,37 @@ impl DeviceManagerActor {
                             Err(anyhow::anyhow!(
                                 "Payload size mismatch: {} (fetched) != {} (requested)",
                                 buf.len(),
-                                size 
+                                size
                             ))
                         }
                     };
                     let _ = reply.send(task.await);
                 });
             }
+            Message::UpdateTrayMenu => {
+                tray_updated = true;
+            }
+        }
+
+        if tray_updated {
+            let mut menu = ContextMenu::new();
+
+            let mut tasks = vec![];
+
+            for device in self.devices.values() {
+                let pr = device.plugin_repo.clone();
+                let device_name = device.name.clone();
+                let task = tokio::spawn(async move { (device_name, pr.create_tray_menu().await) });
+                tasks.push(task);
+            }
+
+            for (name, submenu) in futures::future::join_all(tasks).await.into_iter().flatten() {
+                menu.add_submenu(&name, true, submenu);
+            }
+
+            ctx.event_loop_proxy
+                .send_event(CustomWindowEvent::SetTrayMenu(menu))
+                .ok();
         }
     }
 

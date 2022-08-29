@@ -1,3 +1,9 @@
+use std::{iter::once, os::windows::prelude::*};
+
+use windows::Win32::{
+    Foundation::{HWND, LPARAM, LRESULT, WPARAM},
+    UI::WindowsAndMessaging::DefWindowProcW,
+};
 use winrt_toast::{Text, Toast, ToastManager};
 
 pub mod clipboard;
@@ -44,4 +50,17 @@ pub async fn simple_toast(title: &str, content: Option<&str>, attribution: Optio
             log::error!("Failed to show toast: {:?}", e);
         }
     }
+}
+
+pub fn encode_wide(string: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
+    string.as_ref().encode_wide().chain(once(0)).collect()
+}
+
+pub unsafe extern "system" fn call_default_window_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    DefWindowProcW(hwnd, msg, wparam, lparam)
 }

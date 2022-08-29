@@ -1,7 +1,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use tao::menu::{ContextMenu, MenuItemAttributes};
+use tokio::sync::Mutex;
 
-use crate::packet::NetworkPacket;
+use crate::{context::AppContextRef, packet::NetworkPacket};
 
 use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
@@ -16,7 +18,19 @@ struct BatteryReport {
 }
 
 #[derive(Debug)]
-pub struct BatteryPlugin;
+pub struct BatteryPlugin {
+    ctx: AppContextRef,
+    battery_status: Mutex<Option<BatteryReport>>,
+}
+
+impl BatteryPlugin {
+    pub fn new(ctx: AppContextRef) -> Self {
+        Self {
+            ctx,
+            battery_status: Mutex::new(None),
+        }
+    }
+}
 
 #[async_trait::async_trait]
 impl KdeConnectPlugin for BatteryPlugin {
@@ -24,7 +38,8 @@ impl KdeConnectPlugin for BatteryPlugin {
         match packet.typ.as_str() {
             "kdeconnect.battery" => {
                 let report: BatteryReport = packet.into_body()?;
-                log::info!("Battery report: {:?}", report);
+                *self.battery_status.lock().await = Some(report);
+                self.ctx.update_tray_menu().await;
             }
             "kdeconnect.battery.request" => {
                 // ignore
@@ -32,6 +47,18 @@ impl KdeConnectPlugin for BatteryPlugin {
             _ => {}
         }
         Ok(())
+    }
+
+    async fn tray_menu(&self, menu: &mut ContextMenu) {
+        let status = self.battery_status.lock().await;
+        if let Some(x) = status.as_ref() {
+            let text = format!(
+                "Battery: {}%{}",
+                x.current_charge,
+                if x.is_charging { "+" } else { "" }
+            );
+            menu.add_item(MenuItemAttributes::new(&text).with_enabled(false));
+        }
     }
 }
 

@@ -1,14 +1,22 @@
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use anyhow::{Context, Result};
 use lru_cache::LruCache;
 use serde::{Deserialize, Serialize};
+use tao::menu::{ContextMenu, MenuId, MenuItemAttributes};
 use tokio::sync::Mutex;
 use winrt_toast::{DismissalReason, Header, Text, Toast};
 
 use crate::{
-    cache::PAYLOAD_CACHE, context::AppContextRef, device::DeviceHandle, packet::NetworkPacket,
-    utils,
+    cache::PAYLOAD_CACHE, context::AppContextRef, device::DeviceHandle, event::KdeConnectEvent,
+    packet::NetworkPacket, utils,
 };
 
 use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
@@ -40,20 +48,26 @@ struct IncomingNotification {
 
 #[derive(Debug)]
 pub struct NotificationReceivePlugin {
+    ctx: AppContextRef,
     device: DeviceHandle,
     group_hash: String,
     id_to_icon_path: Mutex<LruCache<String, PathBuf>>,
+    mute_menu_id: MenuId,
+    muted: AtomicBool,
 }
 
 impl NotificationReceivePlugin {
-    pub fn new(dev: DeviceHandle, _ctx: AppContextRef) -> Self {
+    pub fn new(dev: DeviceHandle, ctx: AppContextRef) -> Self {
         Self {
+            ctx,
             group_hash: format!(
                 "{:x}",
                 md5::compute(&format!("receive_notifications:{}", dev.device_id()))
             ),
-            device: dev,
+            mute_menu_id: MenuId::new(&format!("{}:notifications:mute", dev.device_id())),
+            muted: AtomicBool::new(false),
             id_to_icon_path: Mutex::new(LruCache::new(100)),
+            device: dev,
         }
     }
 
@@ -175,18 +189,6 @@ impl NotificationReceivePlugin {
             )
         })
         .await??;
-        //     {
-        //         let actions_el = toast_doc.CreateElement(&hs("actions"))?;
-        //         toast_el.AppendChild(&actions_el)?;
-        //         {
-        //             let action_el = toast_doc.CreateElement(&hs("action"))?;
-        //             actions_el.AppendChild(&action_el)?;
-        //             action_el.SetAttribute(&hs("placement"), &hs("contextMenu"))?;
-        //             action_el
-        //                 .SetAttribute(&hs("content"), &hs("Mute notifications from this app"))?;
-        //             action_el.SetAttribute(&hs("arguments"), &hs("action=muteApp"))?;
-        //         }
-        //     }
 
         Ok(())
     }
@@ -201,6 +203,10 @@ impl NotificationReceivePlugin {
         .await??;
 
         Ok(())
+    }
+
+    fn is_muted(&self) -> bool {
+        self.muted.load(Ordering::Relaxed)
     }
 }
 
@@ -235,10 +241,14 @@ impl KdeConnectPlugin for NotificationReceivePlugin {
                     .context("Remove notification")?;
             }
             NotificationBody::Posted(notif) => {
-                log::info!("Posted {}", notif.id);
-                self.show_notification(notif, payload_info)
-                    .await
-                    .context("Show notification")?;
+                if self.is_muted() {
+                    log::info!("Posted {} (muted)", notif.id);
+                } else {
+                    log::info!("Posted {}", notif.id);
+                    self.show_notification(notif, payload_info)
+                        .await
+                        .context("Show notification")?;
+                }
             }
         }
 
@@ -259,6 +269,24 @@ impl KdeConnectPlugin for NotificationReceivePlugin {
             .await;
         });
 
+        Ok(())
+    }
+
+    async fn tray_menu(&self, menu: &mut ContextMenu) {
+        let mut submenu = ContextMenu::new();
+        submenu.add_item(
+            MenuItemAttributes::new("Mute")
+                .with_selected(self.is_muted())
+                .with_id(self.mute_menu_id),
+        );
+        menu.add_submenu("Notifications", true, submenu);
+    }
+
+    async fn handle_event(self: Arc<Self>, event: KdeConnectEvent) -> Result<()> {
+        if event.is_menu_clicked(self.mute_menu_id) {
+            self.muted.fetch_xor(true, Ordering::Relaxed);
+            self.ctx.update_tray_menu().await;
+        }
         Ok(())
     }
 }
