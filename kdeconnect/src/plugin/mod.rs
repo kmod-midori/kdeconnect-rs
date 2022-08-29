@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::{collections::HashSet, sync::Arc};
-use tao::menu::ContextMenu;
+use tao::menu::{ContextMenu, MenuItemAttributes};
 
 use crate::{
     context::AppContextRef, device::DeviceHandle, event::KdeConnectEvent, packet::NetworkPacket,
@@ -45,10 +45,10 @@ lazy_static::lazy_static! {
 
         incoming_caps.extend(ping::PingPlugin::incoming_capabilities());
         outgoing_caps.extend(ping::PingPlugin::outgoing_capabilities());
-        incoming_caps
-            .extend(connectivity_report::ConnectivityReportPlugin::incoming_capabilities());
-        outgoing_caps
-            .extend(connectivity_report::ConnectivityReportPlugin::outgoing_capabilities());
+        // incoming_caps
+        //     .extend(connectivity_report::ConnectivityReportPlugin::incoming_capabilities());
+        // outgoing_caps
+        //     .extend(connectivity_report::ConnectivityReportPlugin::outgoing_capabilities());
         incoming_caps.extend(clipboard::ClipboardPlugin::incoming_capabilities());
         outgoing_caps.extend(clipboard::ClipboardPlugin::outgoing_capabilities());
         incoming_caps.extend(mpris::MprisPlugin::incoming_capabilities());
@@ -70,21 +70,27 @@ lazy_static::lazy_static! {
     };
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct PluginRepository {
     plugins: Vec<(HashSet<String>, Arc<dyn KdeConnectPlugin>)>,
     pub incoming_caps: HashSet<String>,
     pub outgoing_caps: HashSet<String>,
+    dev: DeviceHandle,
 }
 
 impl PluginRepository {
     pub async fn new(dev: DeviceHandle, ctx: AppContextRef) -> Self {
-        let mut this = Self::default();
+        let mut this = Self {
+            plugins: vec![],
+            incoming_caps: HashSet::new(),
+            outgoing_caps: HashSet::new(),
+            dev: dev.clone(),
+        };
 
         // This also determines the order in which plugins are shown in tray menu.
         this.register(battery::BatteryPlugin::new(ctx.clone()));
         this.register(ping::PingPlugin::new(dev.clone()));
-        this.register(connectivity_report::ConnectivityReportPlugin);
+        // this.register(connectivity_report::ConnectivityReportPlugin);
         this.register(clipboard::ClipboardPlugin::new(dev.clone()));
         utils::log_if_error(
             "Failed to initialize MPRIS plugin",
@@ -163,6 +169,11 @@ impl PluginRepository {
 
     pub async fn create_tray_menu(&self) -> ContextMenu {
         let mut menu = ContextMenu::new();
+
+        menu.add_item(
+            MenuItemAttributes::new(&format!("Device ID:\t\t\t  {}", self.dev.device_id()))
+                .with_enabled(false),
+        );
 
         for (_, plugin) in &self.plugins {
             plugin.tray_menu(&mut menu).await;

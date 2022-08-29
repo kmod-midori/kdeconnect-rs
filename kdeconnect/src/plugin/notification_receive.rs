@@ -285,7 +285,7 @@ impl KdeConnectPlugin for NotificationReceivePlugin {
     async fn handle_event(self: Arc<Self>, event: KdeConnectEvent) -> Result<()> {
         if event.is_menu_clicked(self.mute_menu_id) {
             self.muted.fetch_xor(true, Ordering::Relaxed);
-            self.ctx.update_tray_menu().await;
+            self.ctx.update_tray().await;
         }
         Ok(())
     }

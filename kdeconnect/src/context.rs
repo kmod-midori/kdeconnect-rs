@@ -79,7 +79,7 @@ impl ApplicationContext {
         Ok(tls_stream)
     }
 
-    pub async fn update_tray_menu(&self) {
-        self.device_manager.update_tray_menu().await;
+    pub async fn update_tray(&self) {
+        self.device_manager.update_tray().await;
     }
 }

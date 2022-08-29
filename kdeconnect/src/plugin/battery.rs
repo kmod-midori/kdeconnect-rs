@@ -39,7 +39,7 @@ impl KdeConnectPlugin for BatteryPlugin {
             "kdeconnect.battery" => {
                 let report: BatteryReport = packet.into_body()?;
                 *self.battery_status.lock().await = Some(report);
-                self.ctx.update_tray_menu().await;
+                self.ctx.update_tray().await;
             }
             "kdeconnect.battery.request" => {
                 // ignore
@@ -53,7 +53,7 @@ impl KdeConnectPlugin for BatteryPlugin {
         let status = self.battery_status.lock().await;
         if let Some(x) = status.as_ref() {
             let text = format!(
-                "Battery: {}%{}",
+                "Battery:\t\t\t  {}%{}",
                 x.current_charge,
                 if x.is_charging { "+" } else { "" }
             );

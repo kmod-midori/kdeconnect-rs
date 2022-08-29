@@ -34,7 +34,7 @@ pub enum Message {
         packet: NetworkPacketWithPayload,
     },
     Event(KdeConnectEvent),
-    UpdateTrayMenu,
+    UpdateTray,
     Packet {
         device_id: String,
         packet: NetworkPacket,

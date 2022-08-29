@@ -42,6 +42,8 @@ futures = "0.3.23"
 tao = { version = "0.13.3", features = ["serde", "tray"] }
 clipboard-win = { version = "4.4.2", features = ["std"] }
 winrt-toast = { path = "../winrt-toast" }
+image = { version = "0.24.3", default-features = false, features = ["png"]}
+directories = "4.0.1"
 
 [dependencies.windows]
 version = "0.39.0"

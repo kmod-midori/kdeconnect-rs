@@ -1,6 +1,7 @@
 #![allow(clippy::single_match, dead_code)]
 
 use std::{
+    io::Write,
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::Arc,
@@ -44,6 +45,7 @@ mod utils;
 pub enum CustomWindowEvent {
     ClipboardUpdated,
     SetTrayMenu(ContextMenu),
+    SetTrayIcon(Icon),
 }
 
 pub const AUM_ID: &str = "Midori.KDEConnectRS";
@@ -420,13 +422,20 @@ fn main() -> Result<()> {
 
     let (event_tx, event_rx) = mpsc::channel(10);
 
-    winrt_toast::register(
-        AUM_ID,
-        "KDE Connect",
-        Some(&PathBuf::from(
-            r#"F:\Workspace\kdeconnect\kdeconnect\src\icons\tray.ico"#,
-        )),
-    )?;
+    let base_dirs = directories::BaseDirs::new().expect("Failed to get base dirs");
+    let data_dir = base_dirs.data_dir().join("kde-connect-rs");
+    std::fs::create_dir_all(&data_dir)?;
+
+    {
+        let icon_path = data_dir.join("notification.ico");
+        if !icon_path.exists() {
+            // Extract icon from executable
+            let mut icon_file = std::fs::File::create(&icon_path)?;
+            icon_file.write_all(include_bytes!("icons/notification.ico"))?;
+        }
+        winrt_toast::register(AUM_ID, "KDE Connect", Some(&icon_path))?;
+    }
+
     platform_listener::mpris::start(event_tx.clone())?;
 
     let event_loop: EventLoop<CustomWindowEvent> = EventLoop::with_user_event();
@@ -509,6 +518,9 @@ fn main() -> Result<()> {
                 }
                 CustomWindowEvent::SetTrayMenu(menu) => {
                     system_tray.set_menu(&menu);
+                }
+                CustomWindowEvent::SetTrayIcon(icon) => {
+                    system_tray.set_icon(icon);
                 }
             },
             _ => {}

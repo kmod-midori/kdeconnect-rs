@@ -7,7 +7,7 @@ use std::{
         Arc,
     },
 };
-use tao::menu::ContextMenu;
+use tao::menu::{ContextMenu, MenuItem, MenuItemAttributes};
 
 use tokio::{
     io::AsyncReadExt,
@@ -22,6 +22,25 @@ use crate::{
 use super::Message;
 
 static NEXT_CONN_ID: AtomicUsize = AtomicUsize::new(0);
+
+fn load_png_icon(buf: &[u8]) -> tao::system_tray::Icon {
+    let (icon_rgba, icon_width, icon_height) = {
+        let image = image::load_from_memory(buf).unwrap().into_rgba8();
+        let (width, height) = image.dimensions();
+        let rgba = image.into_raw();
+        (rgba, width, height)
+    };
+    tao::system_tray::Icon::from_rgba(icon_rgba, icon_width, icon_height).unwrap()
+}
+
+lazy_static::lazy_static! {
+    static ref ICON_CELLPHONE: tao::system_tray::Icon = {
+        load_png_icon(include_bytes!("../icons/cellphone.png"))
+    };
+    static ref ICON_CELLPHONE_OFF: tao::system_tray::Icon = {
+        load_png_icon(include_bytes!("../icons/cellphone-off.png"))
+    };
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConnectionId(usize);
@@ -89,8 +108,8 @@ impl DeviceManagerHandle {
         self.send_message(Message::Event(event)).await;
     }
 
-    pub async fn update_tray_menu(&self) {
-        self.send_message(Message::UpdateTrayMenu).await;
+    pub async fn update_tray(&self) {
+        self.send_message(Message::UpdateTray).await;
     }
 
     pub async fn send_packet(&self, device_id: &str, packet: impl Into<NetworkPacketWithPayload>) {
@@ -197,7 +216,7 @@ impl DeviceManagerActor {
                         self.update_active_device_count();
                     }
                 }
-                
+
                 tray_updated = true;
             }
             Message::SendPacket { packet, device_id } => {
@@ -278,16 +297,30 @@ impl DeviceManagerActor {
                     let _ = reply.send(task.await);
                 });
             }
-            Message::UpdateTrayMenu => {
+            Message::UpdateTray => {
                 tray_updated = true;
             }
         }
 
         if tray_updated {
-            let mut menu = ContextMenu::new();
+            self.update_tray(ctx).await;
+        }
+    }
 
-            let mut tasks = vec![];
+    fn update_active_device_count(&self) {
+        let count = self.devices.len();
+        self.active_device_count
+            .store(count, std::sync::atomic::Ordering::Relaxed);
+    }
 
+    async fn update_tray(&self, ctx: &AppContextRef) {
+        let mut menu = ContextMenu::new();
+
+        let mut tasks = vec![];
+
+        if self.devices.is_empty() {
+            menu.add_item(MenuItemAttributes::new("No device connected").with_enabled(false));
+        } else {
             for device in self.devices.values() {
                 let pr = device.plugin_repo.clone();
                 let device_name = device.name.clone();
@@ -298,22 +331,30 @@ impl DeviceManagerActor {
             for (name, submenu) in futures::future::join_all(tasks).await.into_iter().flatten() {
                 menu.add_submenu(&name, true, submenu);
             }
-
-            ctx.event_loop_proxy
-                .send_event(CustomWindowEvent::SetTrayMenu(menu))
-                .ok();
         }
-    }
 
-    fn update_active_device_count(&self) {
-        let count = self.devices.len();
-        self.active_device_count
-            .store(count, std::sync::atomic::Ordering::Relaxed);
+        menu.add_native_item(MenuItem::Separator);
+        menu.add_native_item(MenuItem::Quit);
+
+        ctx.event_loop_proxy
+            .send_event(CustomWindowEvent::SetTrayMenu(menu))
+            .ok();
+
+        let icon = if self.devices.is_empty() {
+            ICON_CELLPHONE_OFF.clone()
+        } else {
+            ICON_CELLPHONE.clone()
+        };
+        ctx.event_loop_proxy
+            .send_event(CustomWindowEvent::SetTrayIcon(icon))
+            .ok();
     }
 
     /// Spawn the actor to a background task.
     pub fn run(mut self, ctx: AppContextRef) {
         tokio::spawn(async move {
+            self.update_tray(&ctx).await;
+
             while let Some(msg) = self.receiver.recv().await {
                 self.handle_message(msg, &ctx).await;
             }
