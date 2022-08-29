@@ -4,17 +4,19 @@ use tao::event_loop::{EventLoop, EventLoopProxy};
 use windows::{
     core::{HSTRING, PCWSTR},
     Win32::{
-        Foundation::{HWND, LPARAM, LRESULT, WPARAM},
+        Foundation::{HANDLE, HWND, LPARAM, LRESULT, WPARAM},
         System::{
             DataExchange::{AddClipboardFormatListener, RemoveClipboardFormatListener},
             LibraryLoader::GetModuleHandleW,
+            Power::{RegisterPowerSettingNotification, HPOWERNOTIFY, UnregisterPowerSettingNotification},
+            SystemServices::{GUID_ACDC_POWER_SOURCE, GUID_BATTERY_PERCENTAGE_REMAINING},
         },
         UI::{
             Shell::{DefSubclassProc, SetWindowSubclass},
             WindowsAndMessaging::{
                 self, DefWindowProcW, DestroyWindow, IsWindow, RegisterClassW, CW_USEDEFAULT,
-                HMENU, WINDOW_STYLE, WM_CLIPBOARDUPDATE, WM_DESTROY, WS_EX_LAYERED,
-                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+                HMENU, WINDOW_STYLE, WM_CLIPBOARDUPDATE, WM_DESTROY, WM_POWERBROADCAST,
+                WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
             },
         },
     },
@@ -22,11 +24,14 @@ use windows::{
 
 use crate::CustomWindowEvent;
 
-pub struct ClipboardListener {
+/// Clipboard and power status listener on Windows.
+pub struct WindowsListener {
     hwnd: HWND,
+    handle_acdc: HPOWERNOTIFY,
+    handle_battery: HPOWERNOTIFY,
 }
 
-impl ClipboardListener {
+impl WindowsListener {
     pub fn new(event_loop: &EventLoop<CustomWindowEvent>) -> Result<Self> {
         unsafe {
             let wnd_class_name = HSTRING::from("kde_connect_rs_clipboard");
@@ -73,15 +78,29 @@ impl ClipboardListener {
 
             AddClipboardFormatListener(hwnd).ok()?;
 
-            Ok(ClipboardListener { hwnd })
+            let handle_acdc =
+                RegisterPowerSettingNotification(HANDLE(hwnd.0), &GUID_ACDC_POWER_SOURCE, 0)?;
+            let handle_battery = RegisterPowerSettingNotification(
+                HANDLE(hwnd.0),
+                &GUID_BATTERY_PERCENTAGE_REMAINING,
+                0,
+            )?;
+
+            Ok(WindowsListener {
+                hwnd,
+                handle_acdc,
+                handle_battery,
+            })
         }
     }
 }
 
-impl Drop for ClipboardListener {
+impl Drop for WindowsListener {
     fn drop(&mut self) {
         unsafe {
             RemoveClipboardFormatListener(self.hwnd);
+            UnregisterPowerSettingNotification(self.handle_acdc);
+            UnregisterPowerSettingNotification(self.handle_battery);
             DestroyWindow(self.hwnd);
         }
     }
@@ -111,6 +130,12 @@ unsafe extern "system" fn subclass_proc(
             subclass_data
                 .proxy
                 .send_event(CustomWindowEvent::ClipboardUpdated)
+                .ok();
+        }
+        WM_POWERBROADCAST => {
+            subclass_data
+                .proxy
+                .send_event(CustomWindowEvent::PowerStatusUpdated)
                 .ok();
         }
         _ => {}

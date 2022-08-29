@@ -3,7 +3,6 @@
 use std::{
     io::Write,
     net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
     sync::Arc,
     time::Duration,
 };
@@ -44,6 +43,7 @@ mod utils;
 
 pub enum CustomWindowEvent {
     ClipboardUpdated,
+    PowerStatusUpdated,
     SetTrayMenu(ContextMenu),
     SetTrayIcon(Icon),
 }
@@ -448,7 +448,7 @@ fn main() -> Result<()> {
 
     let hotkey_manager = ShortcutManager::new(&event_loop);
 
-    let clipboard_listener = platform_listener::clipboard::ClipboardListener::new(&event_loop)?;
+    let windows_listener = platform_listener::windows::WindowsListener::new(&event_loop)?;
 
     let window = WindowBuilder::new()
         .with_title("KDEConnect.rs")
@@ -466,7 +466,7 @@ fn main() -> Result<()> {
     });
 
     event_loop.run(move |event, _, control_flow| {
-        let _ = clipboard_listener;
+        let _ = windows_listener;
 
         *control_flow = ControlFlow::Wait;
 
@@ -514,6 +514,11 @@ fn main() -> Result<()> {
                 CustomWindowEvent::ClipboardUpdated => {
                     event_tx
                         .blocking_send(event::KdeConnectEvent::ClipboardUpdated)
+                        .ok();
+                }
+                CustomWindowEvent::PowerStatusUpdated => {
+                    event_tx
+                        .blocking_send(event::KdeConnectEvent::PowerStatusUpdated)
                         .ok();
                 }
                 CustomWindowEvent::SetTrayMenu(menu) => {

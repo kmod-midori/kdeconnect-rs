@@ -1,2 +1,3 @@
 pub mod mpris;
-pub mod clipboard;
+pub mod windows;
+

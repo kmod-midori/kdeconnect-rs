@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 #[allow(dead_code)]
 pub enum KdeConnectEvent {
     ClipboardUpdated,
+    PowerStatusUpdated,
     HotkeyPressed,
     MediaSessionsChanged,
     TrayMenuClicked(MenuId),
