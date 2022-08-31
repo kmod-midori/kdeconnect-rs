@@ -8,7 +8,9 @@ use windows::{
         System::{
             DataExchange::{AddClipboardFormatListener, RemoveClipboardFormatListener},
             LibraryLoader::GetModuleHandleW,
-            Power::{RegisterPowerSettingNotification, HPOWERNOTIFY, UnregisterPowerSettingNotification},
+            Power::{
+                RegisterPowerSettingNotification, UnregisterPowerSettingNotification, HPOWERNOTIFY,
+            },
             SystemServices::{GUID_ACDC_POWER_SOURCE, GUID_BATTERY_PERCENTAGE_REMAINING},
         },
         UI::{

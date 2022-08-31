@@ -9,7 +9,7 @@ pub use handle::DeviceHandle;
 pub use manager::{DeviceManagerActor, DeviceManagerHandle};
 
 use crate::{
-    event::KdeConnectEvent,
+    event::SystemEvent,
     packet::{NetworkPacket, NetworkPacketWithPayload},
 };
 
@@ -33,7 +33,7 @@ pub enum Message {
         device_id: Option<String>,
         packet: NetworkPacketWithPayload,
     },
-    Event(KdeConnectEvent),
+    Event(SystemEvent),
     UpdateTray,
     Packet {
         device_id: String,

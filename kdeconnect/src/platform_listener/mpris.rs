@@ -9,7 +9,7 @@ pub fn start(tx: EventSender) -> Result<()> {
     let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()?.get()?;
 
     manager.SessionsChanged(&TypedEventHandler::new(move |_, _| {
-        let _ = tx.blocking_send(crate::event::KdeConnectEvent::MediaSessionsChanged);
+        let _ = tx.blocking_send(crate::event::SystemEvent::MediaSessionsChanged);
         Ok(())
     }))?;
 

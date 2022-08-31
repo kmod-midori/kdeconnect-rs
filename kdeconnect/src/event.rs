@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 #[allow(dead_code)]
-pub enum KdeConnectEvent {
+pub enum SystemEvent {
     ClipboardUpdated,
     PowerStatusUpdated,
     HotkeyPressed,
@@ -12,14 +12,14 @@ pub enum KdeConnectEvent {
     TrayMenuClicked(MenuId),
 }
 
-impl KdeConnectEvent {
+impl SystemEvent {
     pub fn is_menu_clicked(&self, id: MenuId) -> bool {
         match self {
-            KdeConnectEvent::TrayMenuClicked(id2) => &id == id2,
+            SystemEvent::TrayMenuClicked(id2) => &id == id2,
             _ => false,
         }
     }
 }
 
-pub type EventSender = mpsc::Sender<KdeConnectEvent>;
-pub type EventReceiver = mpsc::Receiver<KdeConnectEvent>;
+pub type EventSender = mpsc::Sender<SystemEvent>;
+pub type EventReceiver = mpsc::Receiver<SystemEvent>;

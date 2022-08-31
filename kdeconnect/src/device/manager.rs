@@ -15,7 +15,7 @@ use tokio::{
 };
 
 use crate::{
-    context::AppContextRef, device::DeviceHandle, event::KdeConnectEvent,
+    context::AppContextRef, device::DeviceHandle, event::SystemEvent,
     packet::NetworkPacketWithPayload, plugin::PluginRepository, utils, CustomWindowEvent,
 };
 
@@ -104,7 +104,7 @@ impl DeviceManagerHandle {
     }
 
     /// Broadcast an event to all plugins.
-    pub async fn broadcast_event(&self, event: KdeConnectEvent) {
+    pub async fn broadcast_event(&self, event: SystemEvent) {
         self.send_message(Message::Event(event)).await;
     }
 

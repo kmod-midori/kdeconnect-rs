@@ -4,7 +4,7 @@ use crate::{
     cache::PAYLOAD_CACHE,
     context::AppContextRef,
     device::DeviceHandle,
-    event::KdeConnectEvent,
+    event::SystemEvent,
     packet::{NetworkPacket, NetworkPacketWithPayload},
     utils,
 };
@@ -467,9 +467,9 @@ impl KdeConnectPlugin for MprisPlugin {
         Ok(())
     }
 
-    async fn handle_event(self: Arc<Self>, event: KdeConnectEvent) -> Result<()> {
+    async fn handle_event(self: Arc<Self>, event: SystemEvent) -> Result<()> {
         match event {
-            KdeConnectEvent::MediaSessionsChanged => {
+            SystemEvent::MediaSessionsChanged => {
                 utils::log_if_error(
                     "Failed to update sessions",
                     self.handle_sessions_changed().await,

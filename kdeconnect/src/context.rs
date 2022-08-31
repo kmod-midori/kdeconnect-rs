@@ -3,7 +3,10 @@ use anyhow::Result;
 use once_cell::sync::OnceCell;
 use std::{fmt::Debug, sync::Arc};
 use tao::{event_loop::EventLoopProxy, global_shortcut::ShortcutManager};
-use tokio::{net::{TcpStream, ToSocketAddrs}, sync::Mutex};
+use tokio::{
+    net::{TcpStream, ToSocketAddrs},
+    sync::Mutex,
+};
 use tokio_rustls::{client::TlsStream, TlsAcceptor, TlsConnector};
 
 pub type AppContextRef = Arc<ApplicationContext>;
@@ -28,7 +31,7 @@ impl ApplicationContext {
     pub async fn new(
         config: Config,
         event_loop_proxy: EventLoopProxy<CustomWindowEvent>,
-        hotkey_manager: ShortcutManager
+        hotkey_manager: ShortcutManager,
     ) -> Result<Arc<Self>> {
         let (device_manager_actor, device_manager) = crate::device::DeviceManagerActor::new();
         // let plugin_repo = PluginRepository::new();
@@ -40,7 +43,7 @@ impl ApplicationContext {
             tls_acceptor: OnceCell::new(),
             tls_connector: OnceCell::new(),
             event_loop_proxy,
-            hotkey_manager: Mutex::new(hotkey_manager)
+            hotkey_manager: Mutex::new(hotkey_manager),
         });
 
         device_manager_actor.run(this.clone());

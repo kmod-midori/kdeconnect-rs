@@ -3,8 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use tao::menu::{ContextMenu, MenuItemAttributes};
 
 use crate::{
-    context::AppContextRef, device::DeviceHandle, event::KdeConnectEvent, packet::NetworkPacket,
-    utils,
+    context::AppContextRef, device::DeviceHandle, event::SystemEvent, packet::NetworkPacket, utils,
 };
 
 mod battery;
@@ -23,7 +22,7 @@ pub trait KdeConnectPlugin: std::fmt::Debug + Send + Sync {
         Ok(())
     }
     async fn handle(&self, packet: NetworkPacket) -> Result<()>;
-    async fn handle_event(self: Arc<Self>, _event: KdeConnectEvent) -> Result<()> {
+    async fn handle_event(self: Arc<Self>, _event: SystemEvent) -> Result<()> {
         Ok(())
     }
     async fn hotkeys(&self) -> Vec<()> {
@@ -159,7 +158,7 @@ impl PluginRepository {
         Err(anyhow::anyhow!("No plugin found for packet type {}", typ))
     }
 
-    pub async fn handle_event(&self, event: KdeConnectEvent) {
+    pub async fn handle_event(&self, event: SystemEvent) {
         for (_, plugin) in &self.plugins {
             if let Err(e) = plugin.clone().handle_event(event.clone()).await {
                 log::error!("Error handling event: {}", e);

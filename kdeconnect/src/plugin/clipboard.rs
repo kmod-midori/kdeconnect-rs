@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     device::DeviceHandle,
-    event::KdeConnectEvent,
+    event::SystemEvent,
     packet::NetworkPacket,
     utils::{self, clipboard::ClipboardContent},
 };
@@ -102,9 +102,9 @@ impl KdeConnectPlugin for ClipboardPlugin {
         Ok(())
     }
 
-    async fn handle_event(self: Arc<Self>, event: KdeConnectEvent) -> Result<()> {
+    async fn handle_event(self: Arc<Self>, event: SystemEvent) -> Result<()> {
         match event {
-            KdeConnectEvent::ClipboardUpdated => {
+            SystemEvent::ClipboardUpdated => {
                 self.read_clipboard().await.context("Read clipboard")?;
                 // self.send_clipboard().await;
             }

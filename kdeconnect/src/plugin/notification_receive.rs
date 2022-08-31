@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 use winrt_toast::{DismissalReason, Header, Text, Toast};
 
 use crate::{
-    cache::PAYLOAD_CACHE, context::AppContextRef, device::DeviceHandle, event::KdeConnectEvent,
+    cache::PAYLOAD_CACHE, context::AppContextRef, device::DeviceHandle, event::SystemEvent,
     packet::NetworkPacket, utils,
 };
 
@@ -282,7 +282,7 @@ impl KdeConnectPlugin for NotificationReceivePlugin {
         menu.add_submenu("Notifications", true, submenu);
     }
 
-    async fn handle_event(self: Arc<Self>, event: KdeConnectEvent) -> Result<()> {
+    async fn handle_event(self: Arc<Self>, event: SystemEvent) -> Result<()> {
         if event.is_menu_clicked(self.mute_menu_id) {
             self.muted.fetch_xor(true, Ordering::Relaxed);
             self.ctx.update_tray().await;

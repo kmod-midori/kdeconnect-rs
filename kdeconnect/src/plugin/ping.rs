@@ -4,7 +4,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tao::menu::{ContextMenu, MenuId, MenuItemAttributes};
 
-use crate::{device::DeviceHandle, event::KdeConnectEvent, packet::NetworkPacket, utils};
+use crate::{device::DeviceHandle, event::SystemEvent, packet::NetworkPacket, utils};
 
 use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
@@ -59,7 +59,7 @@ impl KdeConnectPlugin for PingPlugin {
         menu.add_item(MenuItemAttributes::new("Ping").with_id(self.menu_id));
     }
 
-    async fn handle_event(self: Arc<Self>, event: KdeConnectEvent) -> Result<()> {
+    async fn handle_event(self: Arc<Self>, event: SystemEvent) -> Result<()> {
         if event.is_menu_clicked(self.menu_id) {
             self.send_ping().await;
         }

@@ -507,18 +507,18 @@ fn main() -> Result<()> {
                 menu_id, origin, ..
             } if origin == MenuType::ContextMenu => {
                 event_tx
-                    .blocking_send(event::KdeConnectEvent::TrayMenuClicked(menu_id))
+                    .blocking_send(event::SystemEvent::TrayMenuClicked(menu_id))
                     .ok();
             }
             Event::UserEvent(event) => match event {
                 CustomWindowEvent::ClipboardUpdated => {
                     event_tx
-                        .blocking_send(event::KdeConnectEvent::ClipboardUpdated)
+                        .blocking_send(event::SystemEvent::ClipboardUpdated)
                         .ok();
                 }
                 CustomWindowEvent::PowerStatusUpdated => {
                     event_tx
-                        .blocking_send(event::KdeConnectEvent::PowerStatusUpdated)
+                        .blocking_send(event::SystemEvent::PowerStatusUpdated)
                         .ok();
                 }
                 CustomWindowEvent::SetTrayMenu(menu) => {
