@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::{device::DeviceHandle, packet::NetworkPacket, utils};
+use crate::{device::DeviceHandle, packet::NetworkPacket};
 
 use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
