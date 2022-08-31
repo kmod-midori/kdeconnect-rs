@@ -87,7 +87,7 @@ impl PluginRepository {
         };
 
         // This also determines the order in which plugins are shown in tray menu.
-        this.register(battery::BatteryPlugin::new(ctx.clone()));
+        this.register(battery::BatteryPlugin::new(dev.clone(), ctx.clone()));
         this.register(ping::PingPlugin::new(dev.clone()));
         // this.register(connectivity_report::ConnectivityReportPlugin);
         this.register(clipboard::ClipboardPlugin::new(dev.clone()));
