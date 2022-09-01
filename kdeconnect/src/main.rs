@@ -57,6 +57,16 @@ enum Role {
     Client { remote_identity: IdentityPacket },
 }
 
+impl Role {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Role::Server => "server",
+            Role::Client { .. } => "client",
+        }
+    }
+}
+
+/// Broadcasts packets for discovery.
 async fn udp_server(tcp_port: u16, ctx: AppContextRef) -> Result<()> {
     let socket = Socket::new(
         Domain::IPV4,
@@ -90,6 +100,7 @@ async fn udp_server(tcp_port: u16, ctx: AppContextRef) -> Result<()> {
     }
 }
 
+/// Handle incoming discovery packets.
 async fn handle_udp_packet(buf: &[u8], addr: SocketAddr, ctx: &AppContextRef) -> Result<()> {
     let remote_identity_packet = serde_json::from_slice::<NetworkPacket>(buf)?;
     if remote_identity_packet.typ != packet::PACKET_TYPE_IDENTITY {
@@ -97,6 +108,10 @@ async fn handle_udp_packet(buf: &[u8], addr: SocketAddr, ctx: &AppContextRef) ->
     }
 
     let remote_identity = remote_identity_packet.into_body::<IdentityPacket>()?;
+    if remote_identity.device_id == ctx.config.uuid {
+        // Don't connect to ourself.
+        return Ok(());
+    }
     let tcp_port = remote_identity
         .tcp_port
         .ok_or_else(|| anyhow::anyhow!("No TCP port"))?;
@@ -111,7 +126,7 @@ async fn handle_udp_packet(buf: &[u8], addr: SocketAddr, ctx: &AppContextRef) ->
                 log::info!("Connection from {} closed", addr);
             }
             Err(err) => {
-                log::error!("Error handling connection: {}", err);
+                log::error!("Error handling connection: {:?}", err);
             }
         }
     });
@@ -119,6 +134,7 @@ async fn handle_udp_packet(buf: &[u8], addr: SocketAddr, ctx: &AppContextRef) ->
     Ok(())
 }
 
+/// Listen to incoming discovery packets.
 async fn udp_listener(ctx: AppContextRef) -> Result<()> {
     let socket = Socket::new(
         Domain::IPV4,
@@ -147,6 +163,7 @@ async fn udp_listener(ctx: AppContextRef) -> Result<()> {
     }
 }
 
+/// Opens a TCP listener on an empty port.
 async fn open_tcp_server() -> Result<(TcpListener, u16)> {
     const MIN_PORT: u16 = 1716;
     const MAX_PORT: u16 = 1764;
@@ -164,6 +181,7 @@ async fn open_tcp_server() -> Result<(TcpListener, u16)> {
     Err(last_error.unwrap().into())
 }
 
+/// Opens a TCP listener on an empty port for payload serving.
 async fn open_payload_tcp_server() -> Result<(TcpListener, u16)> {
     const MIN_PORT: u16 = 1765;
 
@@ -180,6 +198,7 @@ async fn open_payload_tcp_server() -> Result<(TcpListener, u16)> {
     Err(last_error.unwrap().into())
 }
 
+/// Serve payload data on the given listener.
 async fn serve_payload(server: TcpListener, data: Arc<Vec<u8>>, ctx: AppContextRef) {
     let task = async move {
         loop {
@@ -273,6 +292,8 @@ async fn handle_conn(role: Role, stream: TcpStream, ip: IpAddr, ctx: AppContextR
     )?;
     let mut stream = TcpStream::from_std(s2_socket.into())?;
 
+    let role_text = role.as_str();
+
     let (stream, remote_identity) = match role {
         Role::Server => {
             let mut remote_identity = vec![];
@@ -308,6 +329,7 @@ async fn handle_conn(role: Role, stream: TcpStream, ip: IpAddr, ctx: AppContextR
                 &ctx.config,
             );
             stream.write_all(&local_identity_packet.to_vec()).await?;
+            stream.write_all(b"\n").await?;
 
             (
                 tokio_rustls::TlsStream::from(
@@ -331,10 +353,11 @@ async fn handle_conn(role: Role, stream: TcpStream, ip: IpAddr, ctx: AppContextR
     let mut stream = BufStream::new(stream);
 
     log::info!(
-        "Handshake successful for {} ({}) from {}",
+        "Handshake successful for {} ({}) at {} as {}",
         remote_identity.device_name,
         device_id,
-        ip
+        ip,
+        role_text
     );
 
     let (conn_id, mut packet_rx, device_handle) = ctx
@@ -424,7 +447,7 @@ async fn tcp_server(listener: TcpListener, ctx: AppContextRef) -> Result<()> {
                     log::info!("Connection from {} closed", addr);
                 }
                 Err(err) => {
-                    log::error!("Error handling connection: {}", err);
+                    log::error!("Error handling connection: {:?}", err);
                 }
             }
         });

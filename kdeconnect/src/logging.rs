@@ -15,9 +15,9 @@ pub fn setup_logger() -> Result<(), fern::InitError> {
         })
         .level(log::LevelFilter::Info);
 
-    if cfg!(debug_assertions) {
-        logger = logger.level_for("kdeconnect", log::LevelFilter::Debug);
-    }
+    // if cfg!(debug_assertions) {
+    //     logger = logger.level_for("kdeconnect", log::LevelFilter::Debug);
+    // }
 
     logger.chain(std::io::stderr()).apply()?;
 
