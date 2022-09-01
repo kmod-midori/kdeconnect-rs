@@ -2,7 +2,7 @@
 
 use std::{
     io::Write,
-    net::{Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     time::Duration,
 };
@@ -36,6 +36,7 @@ mod config;
 mod context;
 mod device;
 mod event;
+mod logging;
 mod platform_listener;
 mod plugin;
 mod tls;
@@ -49,6 +50,12 @@ pub enum CustomWindowEvent {
 }
 
 pub const AUM_ID: &str = "Midori.KDEConnectRS";
+
+#[derive(Debug)]
+enum Role {
+    Server,
+    Client { remote_identity: IdentityPacket },
+}
 
 async fn udp_server(tcp_port: u16, ctx: AppContextRef) -> Result<()> {
     let socket = Socket::new(
@@ -80,6 +87,63 @@ async fn udp_server(tcp_port: u16, ctx: AppContextRef) -> Result<()> {
             udp_socket.send_to(&buf, broadcast_addr).await?;
         }
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
+}
+
+async fn handle_udp_packet(buf: &[u8], addr: SocketAddr, ctx: &AppContextRef) -> Result<()> {
+    let remote_identity_packet = serde_json::from_slice::<NetworkPacket>(buf)?;
+    if remote_identity_packet.typ != packet::PACKET_TYPE_IDENTITY {
+        bail!("Invalid packet type: {:?}", remote_identity_packet.typ);
+    }
+
+    let remote_identity = remote_identity_packet.into_body::<IdentityPacket>()?;
+    let tcp_port = remote_identity
+        .tcp_port
+        .ok_or_else(|| anyhow::anyhow!("No TCP port"))?;
+
+    let stream = TcpStream::connect((addr.ip(), tcp_port)).await?;
+
+    let ctx = ctx.clone();
+    tokio::spawn(async move {
+        let r = handle_conn(Role::Client { remote_identity }, stream, addr.ip(), ctx).await;
+        match r {
+            Ok(_) => {
+                log::info!("Connection from {} closed", addr);
+            }
+            Err(err) => {
+                log::error!("Error handling connection: {}", err);
+            }
+        }
+    });
+
+    Ok(())
+}
+
+async fn udp_listener(ctx: AppContextRef) -> Result<()> {
+    let socket = Socket::new(
+        Domain::IPV4,
+        socket2::Type::DGRAM,
+        Some(socket2::Protocol::UDP),
+    )?;
+    socket.set_broadcast(true)?;
+    socket.set_reuse_address(true)?;
+    socket.set_nonblocking(true)?;
+    socket.bind(&socket2::SockAddr::from(SocketAddr::new(
+        Ipv4Addr::UNSPECIFIED.into(),
+        1716u16,
+    )))?;
+
+    let udp_socket = UdpSocket::from_std(socket.into())?;
+
+    log::info!("UDP listener started");
+
+    let mut buf = vec![0u8; 1024 * 512];
+    loop {
+        let (n, addr) = udp_socket.recv_from(&mut buf).await?;
+
+        if let Err(e) = handle_udp_packet(&buf[..n], addr, &ctx).await {
+            log::error!("Error handling UDP packet: {}", e);
+        }
     }
 }
 
@@ -196,12 +260,7 @@ async fn send_packet<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-async fn handle_conn(
-    stream: TcpStream,
-    addr: SocketAddr,
-    connector: TlsConnector,
-    ctx: AppContextRef,
-) -> Result<()> {
+async fn handle_conn(role: Role, stream: TcpStream, ip: IpAddr, ctx: AppContextRef) -> Result<()> {
     let s2_socket = Socket::from(stream.into_std()?);
     // enable keepalive
     s2_socket.set_keepalive(true)?;
@@ -214,25 +273,55 @@ async fn handle_conn(
     )?;
     let mut stream = TcpStream::from_std(s2_socket.into())?;
 
-    let mut remote_identity = vec![];
-    loop {
-        let b = stream.read_u8().await?;
-        if b == 0x0A {
-            break;
+    let (stream, remote_identity) = match role {
+        Role::Server => {
+            let mut remote_identity = vec![];
+            loop {
+                let b = stream.read_u8().await?;
+                if b == 0x0A {
+                    break;
+                }
+                remote_identity.push(b);
+            }
+
+            let remote_identity_packet: NetworkPacket = serde_json::from_slice(&remote_identity)?;
+            if remote_identity_packet.typ != packet::PACKET_TYPE_IDENTITY {
+                bail!("Invalid packet type: {:?}", remote_identity_packet.typ);
+            }
+            let remote_identity = remote_identity_packet.into_body::<IdentityPacket>()?;
+
+            (
+                tokio_rustls::TlsStream::from(
+                    ctx.tls_connector()
+                        .connect(ServerName::IpAddress(ip), stream)
+                        .await
+                        .context("TLS connect")?,
+                ),
+                remote_identity,
+            )
         }
-        remote_identity.push(b);
-    }
+        Role::Client { remote_identity } => {
+            let local_identity_packet = NetworkPacket::new_identity(
+                None,
+                plugin::ALL_CAPS.0.clone(),
+                plugin::ALL_CAPS.1.clone(),
+                &ctx.config,
+            );
+            stream.write_all(&local_identity_packet.to_vec()).await?;
 
-    let remote_identity_packet: NetworkPacket = serde_json::from_slice(&remote_identity)?;
-    if remote_identity_packet.typ != packet::PACKET_TYPE_IDENTITY {
-        bail!("Invalid packet type: {:?}", remote_identity_packet.typ);
-    }
-    let remote_identity = remote_identity_packet.into_body::<IdentityPacket>()?;
+            (
+                tokio_rustls::TlsStream::from(
+                    ctx.tls_acceptor()
+                        .accept(stream)
+                        .await
+                        .context("TLS accept")?,
+                ),
+                remote_identity,
+            )
+        }
+    };
+
     let device_id = remote_identity.device_id.as_str();
-
-    let stream = connector
-        .connect(ServerName::IpAddress(addr.ip()), stream)
-        .await?;
     let _peer_cert = stream
         .get_ref()
         .1
@@ -245,12 +334,12 @@ async fn handle_conn(
         "Handshake successful for {} ({}) from {}",
         remote_identity.device_name,
         device_id,
-        addr
+        ip
     );
 
     let (conn_id, mut packet_rx, device_handle) = ctx
         .device_manager
-        .add_device(device_id, &remote_identity.device_name, addr)
+        .add_device(device_id, &remote_identity.device_name, ip)
         .await?;
 
     loop {
@@ -261,7 +350,7 @@ async fn handle_conn(
                 // Send packet
                 if let Some(packet) = packet {
                     if let Err(e) = send_packet(&mut stream, packet, ctx.clone()).await {
-                        log::error!("Error sending packet to {}: {:?}", addr, e);
+                        log::error!("Error sending packet to {}: {:?}", ip, e);
                         break;
                     }
                 } else {
@@ -326,14 +415,13 @@ async fn tcp_server(listener: TcpListener, ctx: AppContextRef) -> Result<()> {
     loop {
         let (stream, addr) = listener.accept().await?;
 
-        let connector = ctx.tls_connector();
         let ctx = ctx.clone();
 
         tokio::spawn(async move {
-            let r = handle_conn(stream, addr, connector, ctx).await;
+            let r = handle_conn(Role::Server, stream, addr.ip(), ctx).await;
             match r {
                 Ok(_) => {
-                    // println!("Connection from {} closed", addr);
+                    log::info!("Connection from {} closed", addr);
                 }
                 Err(err) => {
                     log::error!("Error handling connection: {}", err);
@@ -344,9 +432,34 @@ async fn tcp_server(listener: TcpListener, ctx: AppContextRef) -> Result<()> {
 }
 
 async fn event_handler(mut rx: event::EventReceiver, ctx: AppContextRef) {
-    while let Some(message) = rx.recv().await {
-        let ctx = ctx.clone();
-        ctx.device_manager.broadcast_event(message).await;
+    let mut last_message = None;
+
+    loop {
+        tokio::select! {
+            message = rx.recv() => {
+                if let Some(current_message) = message {
+                    if last_message == Some(current_message) {
+                        // The message has been received twice in a row, ignore it.
+                        continue;
+                    }
+
+                    // The message has changed, send the last one and store the new one.
+
+                    if let Some(last_message) = last_message.take() {
+                        ctx.device_manager.broadcast_event(last_message).await;
+                    }
+
+                    last_message = Some(current_message);
+                } else {
+                    return;
+                }
+            }
+            // Wait for 100ms before sending the message.
+            _ = tokio::time::sleep(Duration::from_millis(100)), if last_message.is_some() => {
+                // Send the last message and clear it.
+                ctx.device_manager.broadcast_event(last_message.take().unwrap()).await;
+            }
+        };
     }
 }
 
@@ -399,6 +512,12 @@ async fn server_main(
         log::warn!("UDP server exited with {:?}", e);
     });
 
+    let uctx = ctx.clone();
+    let udp_listener_task = tokio::spawn(async move {
+        let e = udp_listener(uctx).await;
+        log::warn!("UDP listener exited with {:?}", e);
+    });
+
     let ectx = ctx.clone();
     let event_task = tokio::spawn(async move {
         event_handler(event_rx, ectx).await;
@@ -411,6 +530,7 @@ async fn server_main(
     });
 
     udp_task.await?;
+    udp_listener_task.await?;
     tcp_task.await?;
     event_task.await?;
 
@@ -418,7 +538,7 @@ async fn server_main(
 }
 
 fn main() -> Result<()> {
-    setup_logger().expect("Failed to set up logger");
+    logging::setup_logger().expect("Failed to set up logger");
 
     let (event_tx, event_rx) = mpsc::channel(10);
 
@@ -531,29 +651,4 @@ fn main() -> Result<()> {
             _ => {}
         }
     });
-}
-
-fn setup_logger() -> Result<(), fern::InitError> {
-    use fern::colors::{Color, ColoredLevelConfig};
-    let colors = ColoredLevelConfig::new().info(Color::Green);
-
-    let mut logger = fern::Dispatch::new()
-        .format(move |out, message, record| {
-            out.finish(format_args!(
-                "{}[{}][{}] {}",
-                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
-                record.target(),
-                colors.color(record.level()),
-                message
-            ))
-        })
-        .level(log::LevelFilter::Info);
-
-    if cfg!(debug_assertions) {
-        logger = logger.level_for("kdeconnect", log::LevelFilter::Debug);
-    }
-
-    logger.chain(std::io::stderr()).apply()?;
-
-    Ok(())
 }

@@ -1,7 +1,7 @@
 use tao::menu::MenuId;
 use tokio::sync::mpsc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 #[non_exhaustive]
 #[allow(dead_code)]
 pub enum SystemEvent {

@@ -2,7 +2,7 @@ pub mod handle;
 pub mod manager;
 
 use anyhow::Result;
-use std::net::SocketAddr;
+use std::net::IpAddr;
 use tokio::sync::{mpsc, oneshot};
 
 pub use handle::DeviceHandle;
@@ -20,10 +20,15 @@ pub enum Message {
     AddDevice {
         id: String,
         name: String,
-        addr: SocketAddr,
+        ip: IpAddr,
         conn_id: ConnectionId,
         tx: mpsc::Sender<NetworkPacketWithPayload>,
         reply: oneshot::Sender<DeviceHandle>,
+    },
+    /// Whether the device is connected
+    QueryDevice {
+        id: String,
+        reply: oneshot::Sender<bool>,
     },
     RemoveDevice {
         id: String,

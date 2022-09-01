@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::{
     collections::HashMap,
-    net::SocketAddr,
+    net::IpAddr,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -16,7 +16,7 @@ use tokio::{
 
 use crate::{
     context::AppContextRef, device::DeviceHandle, event::SystemEvent,
-    packet::NetworkPacketWithPayload, plugin::PluginRepository, utils, CustomWindowEvent,
+    packet::NetworkPacketWithPayload, plugin::PluginRepository, CustomWindowEvent,
 };
 
 use super::Message;
@@ -56,7 +56,7 @@ impl DeviceManagerHandle {
         &self,
         id: impl Into<String>,
         name: impl Into<String>,
-        addr: SocketAddr,
+        ip: IpAddr,
     ) -> Result<(
         ConnectionId,
         mpsc::Receiver<NetworkPacketWithPayload>,
@@ -70,7 +70,7 @@ impl DeviceManagerHandle {
         let msg = Message::AddDevice {
             id: id.into(),
             name: name.into(),
-            addr,
+            ip,
             conn_id,
             tx,
             reply: reply_tx,
@@ -84,6 +84,21 @@ impl DeviceManagerHandle {
                 .await
                 .map_err(|_| anyhow::anyhow!("Failed to get device handle"))?,
         ))
+    }
+
+    pub async fn query_device(&self, id: impl Into<String>) -> Result<bool> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let msg = Message::QueryDevice {
+            id: id.into(),
+            reply: reply_tx,
+        };
+        self.send_message(msg).await;
+
+        let result = reply_rx
+            .await
+            .map_err(|_| anyhow::anyhow!("Failed to get response"))?;
+
+        Ok(result)
     }
 
     pub async fn remove_device(&self, id: impl Into<String>, conn_id: ConnectionId) {
@@ -127,7 +142,7 @@ impl DeviceManagerHandle {
 #[allow(dead_code)]
 struct Device {
     name: String,
-    remote_addr: SocketAddr,
+    remote_ip: IpAddr,
     conn_id: ConnectionId,
     tx: mpsc::Sender<NetworkPacketWithPayload>,
     plugin_repo: Arc<PluginRepository>,
@@ -167,7 +182,7 @@ impl DeviceManagerActor {
             Message::AddDevice {
                 id,
                 name,
-                addr,
+                ip,
                 conn_id,
                 tx,
                 reply,
@@ -181,7 +196,7 @@ impl DeviceManagerActor {
                 log::info!("Adding device: {}", id);
 
                 if let Some(device) = self.devices.get_mut(&id) {
-                    device.remote_addr = addr;
+                    device.remote_ip = ip;
                     device.conn_id = conn_id;
                     device.tx = tx;
                 } else {
@@ -190,7 +205,7 @@ impl DeviceManagerActor {
                         id,
                         Device {
                             name,
-                            remote_addr: addr,
+                            remote_ip: ip,
                             conn_id,
                             tx,
                             plugin_repo: Arc::new(plugin_repo),
@@ -216,6 +231,9 @@ impl DeviceManagerActor {
                 }
 
                 tray_updated = true;
+            }
+            Message::QueryDevice { id, reply } => {
+                let _ = reply.send(self.devices.contains_key(&id));
             }
             Message::SendPacket { packet, device_id } => {
                 if let Some(device_id) = device_id {
@@ -273,7 +291,7 @@ impl DeviceManagerActor {
                     let _ = reply.send(Err(anyhow::anyhow!("Device {} not found", device_id)));
                     return;
                 };
-                let remote_ip = device.remote_addr.ip();
+                let remote_ip = device.remote_ip;
                 let ctx = ctx.clone();
 
                 tokio::spawn(async move {
