@@ -160,7 +160,7 @@ impl PluginRepository {
 
     pub async fn handle_event(&self, event: SystemEvent) {
         for (_, plugin) in &self.plugins {
-            if let Err(e) = plugin.clone().handle_event(event.clone()).await {
+            if let Err(e) = plugin.clone().handle_event(event).await {
                 log::error!("Error handling event: {}", e);
             }
         }

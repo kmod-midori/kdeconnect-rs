@@ -8,6 +8,7 @@ use winrt_toast::{Text, Toast, ToastManager};
 
 pub mod clipboard;
 pub mod open;
+pub mod debounce;
 
 lazy_static::lazy_static! {
     pub static ref TOAST_MANAGER: ToastManager = {

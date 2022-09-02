@@ -108,10 +108,16 @@ async fn handle_udp_packet(buf: &[u8], addr: SocketAddr, ctx: &AppContextRef) ->
     }
 
     let remote_identity = remote_identity_packet.into_body::<IdentityPacket>()?;
+    
     if remote_identity.device_id == ctx.config.uuid {
         // Don't connect to ourself.
         return Ok(());
     }
+    if ctx.device_manager.query_device(&remote_identity.device_id).await? {
+        // Don't connect to devices we're already connected to.
+        return Ok(());
+    }
+
     let tcp_port = remote_identity
         .tcp_port
         .ok_or_else(|| anyhow::anyhow!("No TCP port"))?;

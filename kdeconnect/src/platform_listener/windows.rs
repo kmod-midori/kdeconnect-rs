@@ -4,7 +4,7 @@ use tao::event_loop::{EventLoop, EventLoopProxy};
 use windows::{
     core::{HSTRING, PCWSTR},
     Win32::{
-        Foundation::{HANDLE, HWND, LPARAM, LRESULT, WPARAM},
+        Foundation::*,
         System::{
             DataExchange::{AddClipboardFormatListener, RemoveClipboardFormatListener},
             LibraryLoader::GetModuleHandleW,
@@ -15,11 +15,7 @@ use windows::{
         },
         UI::{
             Shell::{DefSubclassProc, SetWindowSubclass},
-            WindowsAndMessaging::{
-                self, DefWindowProcW, DestroyWindow, IsWindow, RegisterClassW, CW_USEDEFAULT,
-                HMENU, WINDOW_STYLE, WM_CLIPBOARDUPDATE, WM_DESTROY, WM_POWERBROADCAST,
-                WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
-            },
+            WindowsAndMessaging::*,
         },
     },
 };
@@ -40,7 +36,7 @@ impl WindowsListener {
 
             let hinstance = GetModuleHandleW(PCWSTR::null())?;
 
-            let wnd_class = WindowsAndMessaging::WNDCLASSW {
+            let wnd_class = WNDCLASSW {
                 lpfnWndProc: Some(crate::utils::call_default_window_proc),
                 hInstance: hinstance,
                 lpszClassName: (&wnd_class_name).into(),
@@ -48,7 +44,7 @@ impl WindowsListener {
             };
             RegisterClassW(&wnd_class);
 
-            let hwnd = WindowsAndMessaging::CreateWindowExW(
+            let hwnd = CreateWindowExW(
                 WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW,
                 &wnd_class_name,
                 PCWSTR::null(),

@@ -125,7 +125,6 @@ struct MprisRequest {
     commands: HashMap<String, Value>,
 }
 
-#[derive(Debug)]
 pub struct MprisPlugin {
     ctx: AppContextRef,
     manager: GlobalSystemMediaTransportControlsSessionManager,
@@ -133,6 +132,12 @@ pub struct MprisPlugin {
     sessions: Mutex<HashMap<String, CurrentSession>>,
     metadatas: Mutex<HashMap<String, MprisMetadata>>,
     rt_handle: tokio::runtime::Handle,
+}
+
+impl std::fmt::Debug for MprisPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MprisPlugin")
+    }
 }
 
 impl MprisPlugin {

@@ -3,7 +3,7 @@ use fern::colors::{Color, ColoredLevelConfig};
 pub fn setup_logger() -> Result<(), fern::InitError> {
     let colors = ColoredLevelConfig::new().info(Color::Green);
 
-    let mut logger = fern::Dispatch::new()
+    let logger = fern::Dispatch::new()
         .format(move |out, message, record| {
             out.finish(format_args!(
                 "{}[{}][{}] {}",

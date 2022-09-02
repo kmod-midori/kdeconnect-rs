@@ -257,7 +257,6 @@ impl DeviceManagerActor {
             Message::Event(event) => {
                 for device in self.devices.values() {
                     let pr = device.plugin_repo.clone();
-                    let event = event.clone();
 
                     tokio::spawn(async move {
                         pr.handle_event(event).await;
