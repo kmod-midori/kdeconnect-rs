@@ -1,3 +1,29 @@
+/*!
+This plugins receives packages with type "kdeconnect.battery" and reads the
+following fields:
+
+isCharging (boolean): If the battery of the peer device is charging
+currentCharge (int): The charge % of the peer device
+thresholdEvent (int) [optional when = 0, see below]:
+    means that a battery threshold event were fired on the remote device:
+        0 := no event. generally not transmitted.
+        1 := battery entered in low state
+    This is an int so in the future we'll be able to subscribe to more events.
+    (see BatteryPlugin.ThresholdBatteryEvent)
+
+Symmetrically, it sends its own battery information in packages with the same
+format. We only look for the 'primary' battery of the system, if one is present.
+
+<TODO>
+Support for devices with multiple batteries isn't there yet.
+</TODO>
+
+It also sends packages with type kdeconnect.battery and a field "request": true,
+to ask the peer device to send a package like the mentioned above, and should
+also answer this same kind of packages with its own information.
+
+If the battery is low and discharging, it will notify the user.
+ */
 use std::{mem::MaybeUninit, sync::Arc};
 
 use anyhow::Result;

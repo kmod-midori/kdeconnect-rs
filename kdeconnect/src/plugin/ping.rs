@@ -1,3 +1,8 @@
+/*!
+This plugin displays a notification to the user each time a package with type
+"kdeconnect.ping" is received. If the package has something in the "message"
+field, that will be displayed in the notification body.
+ */
 use std::sync::Arc;
 
 use anyhow::Result;

@@ -1,3 +1,14 @@
+/*!
+When the clipboard changes, it sends a package with type kdeconnect.clipboard
+and the field "content" (string) containing the new clipboard content.
+
+When it receivest a package of the same kind, it should update the system
+clipboard with the received content, so the clipboard in both devices always
+have the same content.
+
+This plugin is symmetric to its counterpart in the other device: both have the
+same behaviour.
+ */
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
