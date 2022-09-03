@@ -1,6 +1,2 @@
 [workspace]
-
-members = [
-    "kdeconnect",
-    "winrt-toast"
-]
+members = ["kdeconnect", "winrt-toast", "windows-audio-manager"]

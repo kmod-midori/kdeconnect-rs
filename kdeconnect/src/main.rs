@@ -108,7 +108,7 @@ async fn handle_udp_packet(buf: &[u8], addr: SocketAddr, ctx: &AppContextRef) ->
     }
 
     let remote_identity = remote_identity_packet.into_body::<IdentityPacket>()?;
-    
+
     if remote_identity.device_id == ctx.config.uuid {
         // Don't connect to ourself.
         return Ok(());

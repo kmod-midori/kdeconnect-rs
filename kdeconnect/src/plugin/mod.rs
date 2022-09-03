@@ -15,6 +15,7 @@ mod notification_receive;
 mod ping;
 mod run_command;
 mod share;
+mod system_volume;
 
 #[async_trait::async_trait]
 pub trait KdeConnectPlugin: std::fmt::Debug + Send + Sync {
@@ -30,6 +31,7 @@ pub trait KdeConnectPlugin: std::fmt::Debug + Send + Sync {
     }
     /// Create necessary context menu items for this plugin.
     async fn tray_menu(&self, _menu: &mut ContextMenu) {}
+    async fn dispose(&self) {}
 }
 
 pub trait KdeConnectPluginMetadata {
@@ -64,6 +66,8 @@ lazy_static::lazy_static! {
         outgoing_caps.extend(share::SharePlugin::outgoing_capabilities());
         incoming_caps.extend(run_command::RunCommandPlugin::incoming_capabilities());
         outgoing_caps.extend(run_command::RunCommandPlugin::outgoing_capabilities());
+        incoming_caps.extend(system_volume::SystemVolumePlugin::incoming_capabilities());
+        outgoing_caps.extend(system_volume::SystemVolumePlugin::outgoing_capabilities());
 
         (incoming_caps, outgoing_caps)
     };
@@ -104,6 +108,7 @@ impl PluginRepository {
         this.register(input_receive::InputReceivePlugin);
         this.register(share::SharePlugin::new(dev.clone()));
         this.register(run_command::RunCommandPlugin::new(dev.clone()));
+        this.register(system_volume::SystemVolumePlugin::new(dev.clone()));
 
         // Start the plugins
         let plugins = this
@@ -179,5 +184,11 @@ impl PluginRepository {
         }
 
         menu
+    }
+
+    pub async fn dispose(&self) {
+        for (_, plugin) in &self.plugins {
+            plugin.dispose().await;
+        }
     }
 }

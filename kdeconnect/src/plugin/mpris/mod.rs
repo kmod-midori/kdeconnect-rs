@@ -308,34 +308,37 @@ impl MprisPlugin {
     ) -> Result<CurrentSession> {
         let id = session.SourceAppUserModelId()?.to_string_lossy();
 
-        let this = self.clone();
+        let this = Arc::downgrade(&self);
         let sid = id.clone();
         let media_props_token = session
             .MediaPropertiesChanged(&TypedEventHandler::new(move |_, _| {
                 log::debug!("MediaPropertiesChanged: {}", sid);
 
-                let this = this.clone();
-                let sid = sid.clone();
+                if let Some(this) = this.upgrade() {
+                    let sid = sid.clone();
 
-                this.rt_handle.clone().spawn(async move {
-                    this.update_metadata_with_retry(&sid).await;
-                });
+                    this.rt_handle.clone().spawn(async move {
+                        this.update_metadata_with_retry(&sid).await;
+                    });
+                }
 
                 Ok(())
             }))
             .context("Subscribe to MediaPropertiesChanged")?;
 
+        let this = Arc::downgrade(&self);
         let sid = id.clone();
         let playback_info_token = session
             .PlaybackInfoChanged(&TypedEventHandler::new(move |_, _| {
                 log::debug!("PlaybackInfoChanged: {}", sid);
 
-                let this = self.clone();
-                let sid = id.clone();
+                if let Some(this) = this.upgrade() {
+                    let sid = id.clone();
 
-                this.rt_handle.clone().spawn(async move {
-                    this.update_metadata_with_retry(&sid).await;
-                });
+                    this.rt_handle.clone().spawn(async move {
+                        this.update_metadata_with_retry(&sid).await;
+                    });
+                }
 
                 Ok(())
             }))
@@ -349,7 +352,7 @@ impl MprisPlugin {
     }
 
     async fn handle_sessions_changed(self: Arc<Self>) -> Result<()> {
-        log::info!("SessionsChanged");
+        log::info!("Updating sessions");
 
         let sessions = self
             .manager
@@ -557,6 +560,12 @@ impl KdeConnectPlugin for MprisPlugin {
             _ => {}
         }
         Ok(())
+    }
+
+    async fn dispose(&self) {
+        // Drop all sessions
+        self.sessions.lock().await.clear();
+        self.metadatas.lock().await.clear();
     }
 }
 

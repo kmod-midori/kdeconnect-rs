@@ -1,5 +1,6 @@
 use anyhow::Result;
 use tokio::sync::{mpsc, oneshot};
+use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 enum RequestType {
     OpenItem(String),
@@ -18,9 +19,7 @@ impl WindowsApiRequest {
 }
 
 fn create_windows_api_thread() -> mpsc::Sender<WindowsApiRequest> {
-    use windows::Win32::System::Com::{
-        CoInitializeEx, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
-    };
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_DISABLE_OLE1DDE};
     use windows::{
         core::{HSTRING, PCWSTR},
         Win32::{
@@ -35,7 +34,7 @@ fn create_windows_api_thread() -> mpsc::Sender<WindowsApiRequest> {
         unsafe {
             let init_res = CoInitializeEx(
                 std::ptr::null(),
-                COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE,
+                COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE,
             );
             if let Err(e) = init_res {
                 log::error!("Failed to initialize COM: {}", e);

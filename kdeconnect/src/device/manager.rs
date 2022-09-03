@@ -224,7 +224,8 @@ impl DeviceManagerActor {
                     if device.conn_id == conn_id {
                         // We are still on the same connection, so we can remove the device
                         log::info!("Removed device: {}", id);
-
+                        
+                        device.plugin_repo.dispose().await;
                         self.devices.remove(&id);
                         self.update_active_device_count();
                     }
