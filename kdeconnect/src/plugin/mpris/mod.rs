@@ -52,8 +52,10 @@ use windows::{
 
 use super::{KdeConnectPlugin, KdeConnectPluginMetadata};
 
-const PACKET_TYPE_MPRIS: &str = "kdeconnect.mpris";
-const PACKET_TYPE_MPRIS_REQUEST: &str = "kdeconnect.mpris.request";
+pub mod remote;
+
+pub(self) const PACKET_TYPE_MPRIS: &str = "kdeconnect.mpris";
+pub(self) const PACKET_TYPE_MPRIS_REQUEST: &str = "kdeconnect.mpris.request";
 const COVER_URL_PREFIX: &str = "file:///";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -91,7 +93,7 @@ impl PartialEq for WindowsMediaMetadata {
 impl Eq for WindowsMediaMetadata {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct MprisMetadata {
+pub(self) struct MprisMetadata {
     #[serde(flatten)]
     properties: WindowsMediaMetadata,
     #[serde(flatten)]
@@ -125,7 +127,7 @@ impl Drop for CurrentSession {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
-enum MprisPacket {
+pub(self) enum MprisPacket {
     #[serde(rename_all = "camelCase")]
     PlayerList {
         player_list: Vec<String>,
@@ -141,15 +143,20 @@ enum MprisPacket {
     Metadata(MprisMetadata),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MprisRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
     player: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     request_player_list: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     request_now_playing: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     request_volume: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     album_art_url: Option<String>,
-    #[serde(flatten)]
+    #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
     commands: HashMap<String, Value>,
 }
 
@@ -518,47 +525,39 @@ impl KdeConnectPlugin for MprisPlugin {
     }
 
     async fn handle(&self, packet: NetworkPacket) -> Result<()> {
-        match packet.typ.as_str() {
-            PACKET_TYPE_MPRIS => {
-                // let body: MprisPacket = packet.into_body()?;
-                // dbg!(body);
-            }
-            PACKET_TYPE_MPRIS_REQUEST => {
-                let body: MprisRequest = packet.into_body()?;
+        let body: MprisRequest = packet.into_body()?;
 
-                if body.request_player_list == Some(true) {
-                    log::debug!("Request player list");
+        if body.request_player_list == Some(true) {
+            log::debug!("Request player list");
 
-                    self.send_player_list().await;
-                }
-
-                if let (Some(id), Some(true)) = (&body.player, body.request_now_playing) {
-                    log::debug!("Request now playing for {}", id);
-
-                    self.send_now_playing(id).await;
-                }
-
-                if let Some(url) = &body.album_art_url {
-                    log::debug!("Request album art: {}", url);
-
-                    if url.len() > COVER_URL_PREFIX.len() {
-                        let filename = &url[COVER_URL_PREFIX.len()..];
-                        self.send_album_art(filename).await;
-                    } else {
-                        log::warn!("Invalid album art url (too short): {}", url);
-                    }
-                }
-
-                if let (Some(id), true) = (&body.player, !body.commands.is_empty()) {
-                    log::debug!("Request commands: {:?}", body.commands);
-
-                    if let Err(e) = self.execute_commands(id, body.commands).await {
-                        log::warn!("Failed to execute commands: {:?}", e);
-                    }
-                }
-            }
-            _ => {}
+            self.send_player_list().await;
         }
+
+        if let (Some(id), Some(true)) = (&body.player, body.request_now_playing) {
+            log::debug!("Request now playing for {}", id);
+
+            self.send_now_playing(id).await;
+        }
+
+        if let Some(url) = &body.album_art_url {
+            log::debug!("Request album art: {}", url);
+
+            if url.len() > COVER_URL_PREFIX.len() {
+                let filename = &url[COVER_URL_PREFIX.len()..];
+                self.send_album_art(filename).await;
+            } else {
+                log::warn!("Invalid album art url (too short): {}", url);
+            }
+        }
+
+        if let (Some(id), true) = (&body.player, !body.commands.is_empty()) {
+            log::debug!("Request commands: {:?}", body.commands);
+
+            if let Err(e) = self.execute_commands(id, body.commands).await {
+                log::warn!("Failed to execute commands: {:?}", e);
+            }
+        }
+
         Ok(())
     }
 
@@ -571,9 +570,9 @@ impl KdeConnectPlugin for MprisPlugin {
 
 impl KdeConnectPluginMetadata for MprisPlugin {
     fn incoming_capabilities() -> Vec<String> {
-        vec![PACKET_TYPE_MPRIS.into(), PACKET_TYPE_MPRIS_REQUEST.into()]
+        vec![PACKET_TYPE_MPRIS_REQUEST.into()]
     }
     fn outgoing_capabilities() -> Vec<String> {
-        vec![PACKET_TYPE_MPRIS.into(), PACKET_TYPE_MPRIS_REQUEST.into()]
+        vec![PACKET_TYPE_MPRIS.into()]
     }
 }

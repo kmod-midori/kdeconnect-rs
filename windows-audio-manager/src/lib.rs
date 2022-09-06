@@ -455,6 +455,7 @@ enum AudioCommand {
     },
 }
 
+#[derive(Clone)]
 pub struct AudioManagerHandle {
     command_tx: mpsc::Sender<AudioCommand>,
 }

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::{collections::HashSet, sync::Arc};
-use tao::menu::{ContextMenu, MenuItemAttributes};
+use tao::menu::ContextMenu;
 
 use crate::{
     context::AppContextRef, device::DeviceHandle, event::SystemEvent, packet::NetworkPacket, utils,
@@ -54,6 +54,8 @@ lazy_static::lazy_static! {
         outgoing_caps.extend(clipboard::ClipboardPlugin::outgoing_capabilities());
         incoming_caps.extend(mpris::MprisPlugin::incoming_capabilities());
         outgoing_caps.extend(mpris::MprisPlugin::outgoing_capabilities());
+        incoming_caps.extend(mpris::remote::MprisRemotePlugin::incoming_capabilities());
+        outgoing_caps.extend(mpris::remote::MprisRemotePlugin::outgoing_capabilities());
         incoming_caps
             .extend(notification_receive::NotificationReceivePlugin::incoming_capabilities());
         outgoing_caps
@@ -101,6 +103,10 @@ impl PluginRepository {
                 .await
                 .map(|p| this.register(p)),
         );
+        this.register(mpris::remote::MprisRemotePlugin::new(
+            dev.clone(),
+            ctx.clone(),
+        ));
         this.register(notification_receive::NotificationReceivePlugin::new(
             dev.clone(),
             ctx.clone(),
@@ -153,14 +159,19 @@ impl PluginRepository {
 
         log::debug!("Incoming packet: {:?}", packet);
 
+        let mut handled = false;
         for (in_caps, plguin) in &self.plugins {
             if in_caps.contains(typ) {
-                plguin.handle(packet).await?;
-                return Ok(());
+                plguin.handle(packet.clone()).await?;
+                handled = true;
             }
         }
 
-        Err(anyhow::anyhow!("No plugin found for packet type {}", typ))
+        if handled {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("No plugin found for packet type {}", typ))
+        }
     }
 
     pub async fn handle_event(&self, event: SystemEvent) {
@@ -171,19 +182,10 @@ impl PluginRepository {
         }
     }
 
-    pub async fn create_tray_menu(&self) -> ContextMenu {
-        let mut menu = ContextMenu::new();
-
-        menu.add_item(
-            MenuItemAttributes::new(&format!("Device ID:\t\t\t  {}", self.dev.device_id()))
-                .with_enabled(false),
-        );
-
+    pub async fn create_tray_menu(&self, menu: &mut ContextMenu) {
         for (_, plugin) in &self.plugins {
-            plugin.tray_menu(&mut menu).await;
+            plugin.tray_menu(menu).await;
         }
-
-        menu
     }
 
     pub async fn dispose(&self) {

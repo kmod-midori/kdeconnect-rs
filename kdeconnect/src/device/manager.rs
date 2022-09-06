@@ -224,7 +224,7 @@ impl DeviceManagerActor {
                     if device.conn_id == conn_id {
                         // We are still on the same connection, so we can remove the device
                         log::info!("Removed device: {}", id);
-                        
+
                         device.plugin_repo.dispose().await;
                         self.devices.remove(&id);
                         self.update_active_device_count();
@@ -332,24 +332,22 @@ impl DeviceManagerActor {
     async fn update_tray(&self, ctx: &AppContextRef) {
         let mut menu = ContextMenu::new();
 
-        let mut tasks = vec![];
-
         if self.devices.is_empty() {
             menu.add_item(MenuItemAttributes::new("No device connected").with_enabled(false));
+            menu.add_native_item(MenuItem::Separator);
         } else {
             for device in self.devices.values() {
-                let pr = device.plugin_repo.clone();
-                let device_name = device.name.clone();
-                let task = tokio::spawn(async move { (device_name, pr.create_tray_menu().await) });
-                tasks.push(task);
-            }
+                menu.add_item(MenuItemAttributes::new(&format!(
+                    "{}\t\t\t  {}",
+                    device.name, device.remote_ip
+                )));
 
-            for (name, submenu) in futures::future::join_all(tasks).await.into_iter().flatten() {
-                menu.add_submenu(&name, true, submenu);
+                device.plugin_repo.create_tray_menu(&mut menu).await;
+
+                menu.add_native_item(MenuItem::Separator);
             }
         }
 
-        menu.add_native_item(MenuItem::Separator);
         menu.add_native_item(MenuItem::Quit);
 
         ctx.event_loop_proxy
