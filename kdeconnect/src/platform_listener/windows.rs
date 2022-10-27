@@ -56,7 +56,7 @@ impl WindowsListener {
                 HWND::default(),
                 HMENU::default(),
                 hinstance,
-                std::ptr::null_mut(),
+                None,
             );
 
             if !IsWindow(hwnd).as_bool() {
@@ -118,7 +118,7 @@ unsafe extern "system" fn subclass_proc(
 ) -> LRESULT {
     let subclass_data_ptr = subclass_data_ptr as *mut SubclassData;
     if msg == WM_DESTROY {
-        Box::from_raw(subclass_data_ptr);
+        let _ = Box::from_raw(subclass_data_ptr);
         return DefWindowProcW(hwnd, msg, wparam, lparam);
     }
     let subclass_data = &mut *(subclass_data_ptr);

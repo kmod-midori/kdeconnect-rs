@@ -32,10 +32,7 @@ fn create_windows_api_thread() -> mpsc::Sender<WindowsApiRequest> {
 
     std::thread::spawn(move || {
         unsafe {
-            let init_res = CoInitializeEx(
-                std::ptr::null(),
-                COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE,
-            );
+            let init_res = CoInitializeEx(None, COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE);
             if let Err(e) = init_res {
                 log::error!("Failed to initialize COM: {}", e);
             }
@@ -55,7 +52,7 @@ fn create_windows_api_thread() -> mpsc::Sender<WindowsApiRequest> {
                             &HSTRING::from(item),
                             PCWSTR::null(),
                             PCWSTR::null(),
-                            SW_SHOWNORMAL.0 as i32,
+                            SW_SHOWNORMAL,
                         )
                     };
                     // If the function succeeds, it returns a value greater than 32.

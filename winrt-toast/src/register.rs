@@ -48,11 +48,11 @@ pub fn register(aum_id: &str, display_name: &str, icon_path: Option<&Path>) -> c
             PCWSTR::null(),
             REG_OPTION_NON_VOLATILE,
             KEY_ALL_ACCESS,
-            null_mut(),
+            None,
             &mut new_hkey,
-            null_mut(),
+            None,
             transaction,
-            null_mut(),
+            None,
         )
         .ok()?;
         assert!(!new_hkey.is_invalid());
@@ -62,22 +62,13 @@ pub fn register(aum_id: &str, display_name: &str, icon_path: Option<&Path>) -> c
             &HSTRING::from("DisplayName"),
             0,
             REG_SZ,
-            display_name.as_ptr() as *const _,
-            utf16_bytes_len(&display_name) as u32,
+            Some(&display_name),
         )
         .ok()?;
 
         let icon_uri_name = HSTRING::from("IconUri");
         if let Some(icon_path) = icon_path {
-            RegSetValueExW(
-                new_hkey,
-                &icon_uri_name,
-                0,
-                REG_SZ,
-                icon_path.as_ptr() as *const _,
-                utf16_bytes_len(&icon_path) as u32,
-            )
-            .ok()?;
+            RegSetValueExW(new_hkey, &icon_uri_name, 0, REG_SZ, Some(&icon_path)).ok()?;
         } else {
             RegDeleteValueW(new_hkey, &icon_uri_name).ok()?
         }
@@ -89,14 +80,15 @@ pub fn register(aum_id: &str, display_name: &str, icon_path: Option<&Path>) -> c
 }
 
 /// Convert to null-terminated UTF-16 bytes
-fn to_utf16<P: AsRef<OsStr>>(s: P) -> Vec<u16> {
+fn to_utf16<P: AsRef<OsStr>>(s: P) -> Vec<u8> {
     s.as_ref()
         .encode_wide()
         .chain(Some(0).into_iter())
+        .flat_map(|c| c.to_ne_bytes())
         .collect()
 }
 
-/// Length of UTF-16 slices in terms of bytes
-fn utf16_bytes_len(s: &[u16]) -> usize {
-    s.len() * std::mem::size_of::<u16>()
-}
+// /// Length of UTF-16 slices in terms of bytes
+// fn utf16_bytes_len(s: &[u16]) -> usize {
+//     s.len() * std::mem::size_of::<u16>()
+// }

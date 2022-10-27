@@ -20,9 +20,9 @@ fn get_cert(
 /// use the same enum from `rustls`, because it seems to be on a different
 /// version from the rustls we want.)
 fn convert_scheme(
-    scheme: tokio_rustls::rustls::internal::msgs::enums::SignatureScheme,
+    scheme: tokio_rustls::rustls::SignatureScheme,
 ) -> Result<x509_signature::SignatureScheme, TlsError> {
-    use tokio_rustls::rustls::internal::msgs::enums::SignatureScheme as R;
+    use tokio_rustls::rustls::SignatureScheme as R;
     use x509_signature::SignatureScheme as X;
 
     Ok(match scheme {
@@ -83,12 +83,12 @@ impl tokio_rustls::rustls::client::ServerCertVerifier for ServerVerifier {
         &self,
         message: &[u8],
         cert: &tokio_rustls::rustls::Certificate,
-        dss: &tokio_rustls::rustls::internal::msgs::handshake::DigitallySignedStruct,
+        dss: &tokio_rustls::rustls::DigitallySignedStruct,
     ) -> Result<tokio_rustls::rustls::client::HandshakeSignatureValid, tokio_rustls::rustls::Error>
     {
         let cert = get_cert(cert)?;
         let scheme = convert_scheme(dss.scheme)?;
-        let signature = dss.sig.0.as_ref();
+        let signature = dss.signature();
 
         cert.check_signature(scheme, message, signature)
             .map(|_| tokio_rustls::rustls::client::HandshakeSignatureValid::assertion())
@@ -99,12 +99,12 @@ impl tokio_rustls::rustls::client::ServerCertVerifier for ServerVerifier {
         &self,
         message: &[u8],
         cert: &tokio_rustls::rustls::Certificate,
-        dss: &tokio_rustls::rustls::internal::msgs::handshake::DigitallySignedStruct,
+        dss: &tokio_rustls::rustls::DigitallySignedStruct,
     ) -> Result<tokio_rustls::rustls::client::HandshakeSignatureValid, tokio_rustls::rustls::Error>
     {
         let cert = get_cert(cert)?;
         let scheme = convert_scheme(dss.scheme)?;
-        let signature = dss.sig.0.as_ref();
+        let signature = dss.signature();
 
         cert.check_tls13_signature(scheme, message, signature)
             .map(|_| tokio_rustls::rustls::client::HandshakeSignatureValid::assertion())
@@ -133,11 +133,11 @@ impl tokio_rustls::rustls::server::ClientCertVerifier for ClientVerifier {
         &self,
         message: &[u8],
         cert: &tokio_rustls::rustls::Certificate,
-        dss: &tokio_rustls::rustls::internal::msgs::handshake::DigitallySignedStruct,
+        dss: &tokio_rustls::rustls::DigitallySignedStruct,
     ) -> Result<tokio_rustls::rustls::client::HandshakeSignatureValid, TlsError> {
         let cert = get_cert(cert)?;
         let scheme = convert_scheme(dss.scheme)?;
-        let signature = dss.sig.0.as_ref();
+        let signature = dss.signature();
 
         cert.check_signature(scheme, message, signature)
             .map(|_| tokio_rustls::rustls::client::HandshakeSignatureValid::assertion())
@@ -148,11 +148,11 @@ impl tokio_rustls::rustls::server::ClientCertVerifier for ClientVerifier {
         &self,
         message: &[u8],
         cert: &tokio_rustls::rustls::Certificate,
-        dss: &tokio_rustls::rustls::internal::msgs::handshake::DigitallySignedStruct,
+        dss: &tokio_rustls::rustls::DigitallySignedStruct,
     ) -> Result<tokio_rustls::rustls::client::HandshakeSignatureValid, TlsError> {
         let cert = get_cert(cert)?;
         let scheme = convert_scheme(dss.scheme)?;
-        let signature = dss.sig.0.as_ref();
+        let signature = dss.signature();
 
         cert.check_tls13_signature(scheme, message, signature)
             .map(|_| tokio_rustls::rustls::client::HandshakeSignatureValid::assertion())

@@ -39,7 +39,7 @@ url = "2.2.2"
 futures = "0.3.23"
 
 # System
-tao = { version = "0.13.3", features = ["serde", "tray"] }
+tao = { version = "0.14.0", features = ["serde", "tray"] }
 clipboard-win = { version = "4.4.2", features = ["std"] }
 winrt-toast = { path = "../winrt-toast" }
 image = { version = "0.24.3", default-features = false, features = ["png"] }
@@ -47,7 +47,7 @@ directories = "4.0.1"
 windows-audio-manager = { path = "../windows-audio-manager" }
 
 [dependencies.windows]
-version = "0.39.0"
+version = "0.43.0"
 features = [
     "Win32_Foundation",
     "Win32_Security",

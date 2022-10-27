@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
-    ptr::null, sync::Arc,
+    ptr::null,
+    sync::Arc,
 };
 
 use anyhow::Result;
@@ -18,15 +19,21 @@ use windows::{
             },
             *,
         },
-        System::Com::{StructuredStorage::STGM_READ, *},
+        System::Com::*,
     },
 };
 
 #[derive(Debug)]
 enum AudioEvent {
     SendSinkList,
-    ReleaseDevice { id: String },
-    VolumeUpdated { id: Arc<String>, volume: u8, muted: bool },
+    ReleaseDevice {
+        id: String,
+    },
+    VolumeUpdated {
+        id: Arc<String>,
+        volume: u8,
+        muted: bool,
+    },
 }
 
 #[windows::core::implement(IMMNotificationClient)]
@@ -233,8 +240,7 @@ impl AudioManager {
                 if let Some(sink) = self.sinks.get_mut(&id) {
                     sink.is_active = default_device_id == id;
                 } else {
-                    let endpoint = match device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, null())
-                    {
+                    let endpoint = match device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
                         Ok(e) => e,
                         Err(e) => {
                             log::warn!("Failed to create IAudioEndpointVolume for device: {:?}", e);
@@ -387,10 +393,7 @@ impl AudioManager {
         let (event_tx, mut event_rx) = mpsc::channel(1);
 
         unsafe {
-            CoInitializeEx(
-                std::ptr::null(),
-                COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE,
-            )?;
+            CoInitializeEx(None, COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE)?;
             self.update_sink_list_or_log(event_tx.clone());
         }
 
