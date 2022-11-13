@@ -157,7 +157,7 @@ impl PluginRepository {
     pub async fn handle_packet(&self, packet: NetworkPacket) -> Result<()> {
         let typ = packet.typ.as_str();
 
-        log::debug!("Incoming packet: {:?}", packet);
+        tracing::debug!("Incoming packet: {:?}", packet);
 
         let mut handled = false;
         for (in_caps, plguin) in &self.plugins {

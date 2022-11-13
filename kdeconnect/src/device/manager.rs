@@ -8,6 +8,7 @@ use std::{
     },
 };
 use tao::menu::{ContextMenu, MenuItem, MenuItemAttributes};
+use tracing::{Instrument, Span};
 
 use tokio::{
     io::AsyncReadExt,
@@ -47,7 +48,7 @@ pub struct ConnectionId(usize);
 
 #[derive(Debug, Clone)]
 pub struct DeviceManagerHandle {
-    sender: mpsc::Sender<Message>,
+    sender: mpsc::Sender<(Message, Span)>,
     active_device_count: Arc<AtomicUsize>,
 }
 
@@ -110,7 +111,10 @@ impl DeviceManagerHandle {
     }
 
     pub(super) async fn send_message(&self, msg: Message) {
-        self.sender.send(msg).await.expect("Failed to send message");
+        self.sender
+            .send((msg, tracing::Span::current()))
+            .await
+            .expect("Failed to send message");
     }
 
     pub fn active_device_count(&self) -> usize {
@@ -149,7 +153,7 @@ struct Device {
 }
 
 pub struct DeviceManagerActor {
-    receiver: mpsc::Receiver<Message>,
+    receiver: mpsc::Receiver<(Message, Span)>,
     devices: HashMap<String, Device>,
     active_device_count: Arc<AtomicUsize>,
     handle: DeviceManagerHandle,
@@ -265,19 +269,30 @@ impl DeviceManagerActor {
                 }
             }
             Message::Packet { device_id, packet } => {
+                let span = tracing::info_span!(
+                    "Packet",
+                    device = device_id,
+                    packet.id = packet.id,
+                    packet.typ = packet.typ,
+                );
+                let _enter = span.enter();
+
                 let device = if let Some(device) = self.devices.get_mut(&device_id) {
                     device
                 } else {
-                    log::warn!("Device {} not found", device_id);
+                    tracing::warn!("Device {} not found", device_id);
                     return;
                 };
                 let pr = device.plugin_repo.clone();
 
-                tokio::spawn(async move {
-                    if let Err(e) = pr.handle_packet(packet).await {
-                        log::error!("Failed to handle packet from {}: {:?}", device_id, e);
+                tokio::spawn(
+                    async move {
+                        if let Err(e) = pr.handle_packet(packet).await {
+                            tracing::error!("Failed to handle packet: {:?}", e);
+                        }
                     }
-                });
+                    .instrument(span.clone()),
+                );
             }
             Message::FetchPayload {
                 device_id,
@@ -369,8 +384,8 @@ impl DeviceManagerActor {
         tokio::spawn(async move {
             self.update_tray(&ctx).await;
 
-            while let Some(msg) = self.receiver.recv().await {
-                self.handle_message(msg, &ctx).await;
+            while let Some((msg, span)) = self.receiver.recv().await {
+                self.handle_message(msg, &ctx).instrument(span).await;
             }
         });
     }

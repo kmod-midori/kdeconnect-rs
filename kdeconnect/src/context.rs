@@ -13,7 +13,6 @@ pub type AppContextRef = Arc<ApplicationContext>;
 
 pub struct ApplicationContext {
     pub device_manager: DeviceManagerHandle,
-    // pub plugin_repo: PluginRepository,
     pub config: Config,
     pub tls_acceptor: OnceCell<TlsAcceptor>,
     pub tls_connector: OnceCell<TlsConnector>,
@@ -34,11 +33,9 @@ impl ApplicationContext {
         hotkey_manager: ShortcutManager,
     ) -> Result<Arc<Self>> {
         let (device_manager_actor, device_manager) = crate::device::DeviceManagerActor::new();
-        // let plugin_repo = PluginRepository::new();
 
         let this = Arc::new(Self {
             device_manager,
-            // plugin_repo,
             config,
             tls_acceptor: OnceCell::new(),
             tls_connector: OnceCell::new(),
@@ -47,7 +44,6 @@ impl ApplicationContext {
         });
 
         device_manager_actor.run(this.clone());
-        // this.plugin_repo.start(this.clone()).await?;
 
         Ok(this)
     }

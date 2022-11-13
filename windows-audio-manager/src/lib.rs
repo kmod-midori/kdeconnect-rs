@@ -60,6 +60,10 @@ impl IMMNotificationClient_Impl for NotificationClient {
         pwstrdeviceid: &PCWSTR,
         dwnewstate: u32,
     ) -> windows::core::Result<()> {
+        unsafe {
+            log::debug!("OnDeviceStateChanged: {} to {}", pwstrdeviceid.display(), dwnewstate);
+        }
+
         if dwnewstate == DEVICE_STATE_UNPLUGGED {
             return self.OnDeviceRemoved(pwstrdeviceid);
         }
@@ -67,13 +71,19 @@ impl IMMNotificationClient_Impl for NotificationClient {
         Ok(())
     }
 
-    fn OnDeviceAdded(&self, _pwstrdeviceid: &PCWSTR) -> windows::core::Result<()> {
+    fn OnDeviceAdded(&self, pwstrdeviceid: &PCWSTR) -> windows::core::Result<()> {
+        unsafe {
+            log::debug!("OnDeviceAdded: {}", pwstrdeviceid.display());
+        }
+
         self.send_sink_list();
         Ok(())
     }
 
     fn OnDeviceRemoved(&self, pwstrdeviceid: &PCWSTR) -> windows::core::Result<()> {
         unsafe {
+            log::debug!("OnDeviceRemoved: {}", pwstrdeviceid.display());
+
             match pwstrdeviceid.to_string() {
                 Ok(s) => {
                     self.send_release_device(s);
@@ -93,6 +103,8 @@ impl IMMNotificationClient_Impl for NotificationClient {
         _role: ERole,
         _pwstrdefaultdeviceid: &PCWSTR,
     ) -> windows::core::Result<()> {
+        log::debug!("Default device changed: {:?}", flow);
+
         if flow == eRender {
             self.send_sink_list();
         }
@@ -104,6 +116,8 @@ impl IMMNotificationClient_Impl for NotificationClient {
         _pwstrdeviceid: &PCWSTR,
         _key: &windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY,
     ) -> windows::core::Result<()> {
+        log::debug!("OnPropertyValueChanged");
+
         self.send_sink_list();
         Ok(())
     }
@@ -118,6 +132,8 @@ struct AudioEndpointVolumeCb {
 #[allow(non_snake_case)]
 impl IAudioEndpointVolumeCallback_Impl for AudioEndpointVolumeCb {
     fn OnNotify(&self, pnotify: *mut AUDIO_VOLUME_NOTIFICATION_DATA) -> windows::core::Result<()> {
+        log::debug!("AudioEndpointVolumeCb OnNotify: {}", self.id);
+
         if let Some(p) = unsafe { pnotify.as_ref() } {
             self.sender
                 .blocking_send(AudioEvent::VolumeUpdated {

@@ -206,13 +206,13 @@ impl NotificationReceivePlugin {
             }
             Ok(_) => {}
             Err(e) => {
-                log::error!("Failed to get dismissal reason: {:?}", e);
+                tracing::error!("Failed to get dismissal reason: {:?}", e);
             }
         });
 
         let id = notification.id.clone();
         let on_failed = Box::new(move |e| {
-            log::error!("Failed to show notification {}: {:?}", id, e);
+            tracing::error!("Failed to show notification {}: {:?}", id, e);
         });
 
         let on_activated = Box::new(move |_arg| {});
@@ -272,16 +272,17 @@ impl KdeConnectPlugin for NotificationReceivePlugin {
 
         match body {
             NotificationBody::Cancelled { id, .. } => {
-                log::info!("Cancelled {}", id);
+                tracing::debug!("Cancelled {}", id);
                 self.remove_notification(&id)
                     .await
                     .context("Remove notification")?;
             }
             NotificationBody::Posted(notif) => {
                 if self.is_muted() {
-                    log::info!("Posted {} (muted)", notif.id);
+                    tracing::debug!("Posted {} (muted)", notif.id);
                 } else {
-                    log::info!("Posted {}", notif.id);
+                    tracing::debug!("Posted {}", notif.id);
+
                     self.show_notification(notif, payload_info)
                         .await
                         .context("Show notification")?;

@@ -1,25 +1,18 @@
-use fern::colors::{Color, ColoredLevelConfig};
+use tracing_subscriber::{filter, prelude::*};
 
-pub fn setup_logger() -> Result<(), fern::InitError> {
-    let colors = ColoredLevelConfig::new().info(Color::Green);
+pub fn setup_logger() -> Result<(), tracing_subscriber::util::TryInitError> {
+    let mut filter = filter::Targets::new().with_default(tracing::Level::INFO);
 
-    let logger = fern::Dispatch::new()
-        .format(move |out, message, record| {
-            out.finish(format_args!(
-                "{}[{}][{}] {}",
-                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
-                record.target(),
-                colors.color(record.level()),
-                message
-            ))
-        })
-        .level(log::LevelFilter::Info);
+    if cfg!(debug_assertions) {
+        filter = filter
+            .with_target("kdeconnect", tracing::Level::DEBUG)
+            .with_target("windows_audio_manager", tracing::Level::DEBUG);
+    }
 
-    // if cfg!(debug_assertions) {
-    //     logger = logger.level_for("kdeconnect", log::LevelFilter::Debug);
-    // }
+    let stderr_log = tracing_subscriber::fmt::layer().with_writer(std::io::stderr);
 
-    logger.chain(std::io::stderr()).apply()?;
-
-    Ok(())
+    tracing_subscriber::registry()
+        .with(stderr_log)
+        .with(filter)
+        .try_init()
 }
